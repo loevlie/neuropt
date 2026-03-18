@@ -55,6 +55,7 @@ def run(
     batch_size: int = typer.Option(3, "--batch-size", "-b", help="Configs per LLM call"),
     device: Optional[str] = typer.Option(None, help="Device (cuda, mps, cpu). Auto-detects if omitted."),
     timeout: int = typer.Option(600, help="Max seconds per experiment"),
+    max_evals: Optional[int] = typer.Option(None, "--max-evals", "-n", help="Stop after N experiments (default: run forever)"),
 ):
     """Run LLM-guided optimization on a training script.
 
@@ -88,7 +89,7 @@ def run(
         typer.echo(f"Using search space from {script.name}")
         search = ArchSearch(train_fn=train_fn, search_space=search_space, **kwargs)
 
-    search.run()
+    search.run(max_evals=max_evals)
 
 
 @app.command()

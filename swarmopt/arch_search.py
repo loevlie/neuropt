@@ -39,25 +39,24 @@ Analyze the experiment history and propose better configurations.
 class ArchSearch:
     """LLM-guided search over any parameter space.
 
-    Two ways to use it:
+    **Simplest usage** — from an existing model::
 
-    **Manual search space** — you define what to search over::
+        search = ArchSearch.from_model(my_resnet, train_fn)
+        search.run()
 
-        search = ArchSearch(
-            train_fn=my_train_fn,
-            search_space={"lr": LogUniform(1e-4, 1e-1), ...},
-            backend="claude",
-        )
+    **Custom search space** — plain Python, we infer the types::
 
-    **From an existing model** — we figure out what's tunable::
+        search = ArchSearch(train_fn, {
+            "lr": (1e-4, 1e-1),                    # auto → LogUniform
+            "hidden_dim": (32, 512),                # auto → IntUniform
+            "activation": ["relu", "gelu", "silu"], # auto → Categorical
+            "use_bn": [True, False],                # auto → Categorical
+        })
+        search.run()
 
-        search = ArchSearch.from_model(
-            model=my_resnet,
-            train_fn=my_train_fn,
-            backend="claude",
-        )
+    **In a notebook** — stop after N experiments::
 
-    In both cases, call ``search.run()`` and it goes until Ctrl+C.
+        search.run(max_evals=50)
     """
 
     @classmethod
@@ -130,20 +129,24 @@ class ArchSearch:
             train_fn: Callable(config_dict) -> dict. Must return at least
                 ``{"score": float}``. For curve-aware search, also return
                 ``train_losses``, ``val_losses``, ``val_accuracies`` as lists.
-            search_space: Dict mapping param names to dimension objects
-                (LogUniform, Uniform, IntUniform, Categorical).
-            backend: LLM backend — "auto", "claude", "openai", "qwen", "none",
-                or a backend instance.
-            log_path: JSONL log file path. Supports resume.
+            search_space: Dict mapping param names to values. Values can be:
+
+                - A dimension object: ``LogUniform(1e-4, 1e-1)``
+                - A tuple of two numbers: ``(1e-4, 1e-1)`` — auto-inferred
+                - A list: ``["relu", "gelu"]`` — becomes Categorical
+                - We pick LogUniform vs Uniform vs IntUniform based on
+                  the param name and value types (see ``_infer_dim``).
+
+            backend: "auto", "claude", "openai", "qwen", "none", or instance.
+            log_path: JSONL log file path (supports resume).
             batch_size: Configs proposed per LLM call.
             device: Injected into config as ``config["device"]`` if set.
             timeout: Max seconds per experiment.
-            ml_context: Domain knowledge for the LLM. Overrides the default
-                generic prompt. Use this to tell the LLM about your task,
-                model architecture constraints, or dataset properties.
+            ml_context: Domain knowledge for the LLM (appended to default
+                prompt). Tell it about your dataset, architecture, etc.
         """
         self.train_fn = train_fn
-        self.search_space = search_space
+        self.search_space = _normalize_search_space(search_space)
         self.batch_size = batch_size
         self.device = device
         self.timeout = timeout
@@ -161,8 +164,14 @@ class ArchSearch:
         self.llm_success = 0
         self.llm_fallback = 0
 
-    def run(self):
-        """Run the search loop until Ctrl+C or SIGTERM."""
+    def run(self, max_evals: int | None = None):
+        """Run the search loop.
+
+        Args:
+            max_evals: Stop after this many experiments. If None, runs
+                until Ctrl+C (useful for CLI / overnight). Set this for
+                notebooks or scripted use.
+        """
         self._setup_signals()
 
         logger = _JSONLLogger(self.log_path)
@@ -186,22 +195,31 @@ class ArchSearch:
         print(f"  Device: {self.device or 'auto'}")
         print(f"  Batch size: {self.batch_size}")
         print(f"  Log: {self.log_path}")
+        if max_evals:
+            print(f"  Max evals: {max_evals}")
         if self.total_experiments:
             print(f"  Resuming from {self.total_experiments} experiments")
             print(f"  Best so far: loss={self.best_score:.4f} acc={self.best_accuracy:.4f}")
-        print("  Ctrl+C to stop")
+        if not max_evals:
+            print("  Ctrl+C to stop")
         print("=" * 60)
         print()
+        evals_at_start = self.total_experiments
 
         rng = random.Random(42 + self.total_experiments)
 
         while not self._shutdown:
+            if max_evals and (self.total_experiments - evals_at_start) >= max_evals:
+                break
+
             iter_start = time.time()
 
             configs, source = self._get_configs(history, rng)
 
             for idx, cfg in enumerate(configs):
                 if self._shutdown:
+                    break
+                if max_evals and (self.total_experiments - evals_at_start) >= max_evals:
                     break
 
                 run_cfg = dict(cfg)
@@ -528,6 +546,82 @@ class _JSONLLogger:
                 if line:
                     rows.append(json.loads(line))
         return rows
+
+
+# Names that should use log-uniform sampling (span orders of magnitude)
+_LOG_SCALE_NAMES = {
+    "lr", "learning_rate", "wd", "weight_decay", "l2", "l2_reg",
+    "eps", "epsilon", "min_lr", "max_lr", "base_lr",
+}
+
+# Names that are clearly integer-valued
+_INT_NAMES = {
+    "n_layers", "num_layers", "n_blocks", "num_blocks", "depth",
+    "hidden_dim", "hidden_size", "n_hidden", "width", "n_heads",
+    "num_heads", "n_units", "num_units", "embed_dim", "embedding_dim",
+    "base_channels", "channels", "n_channels", "fc_hidden",
+    "batch_size", "pool_every", "kernel_size", "epochs", "n_epochs",
+}
+
+
+def _infer_dim(name, value):
+    """Infer a dimension type from a param name and raw value.
+
+    Handles:
+        - list → Categorical
+        - tuple of 2 numbers → LogUniform/Uniform/IntUniform based on name
+        - Already a dimension object → pass through
+    """
+    # Already a dimension object
+    if isinstance(value, (LogUniform, Uniform, IntUniform, Categorical)):
+        return value
+
+    # List → Categorical
+    if isinstance(value, list):
+        return Categorical(value)
+
+    # Tuple of (low, high) → infer numeric type
+    if isinstance(value, tuple) and len(value) == 2:
+        lo, hi = value
+
+        # Both ints and name suggests integer → IntUniform
+        if isinstance(lo, int) and isinstance(hi, int):
+            if name.lower() in _INT_NAMES or name.startswith("n_") or name.startswith("num_"):
+                return IntUniform(lo, hi)
+
+        lo, hi = float(lo), float(hi)
+
+        # Name suggests log scale, or ratio > 100 with small values
+        name_lower = name.lower()
+        if name_lower in _LOG_SCALE_NAMES:
+            if lo > 0:
+                return LogUniform(lo, hi)
+
+        # Large ratio with small min → probably log scale
+        if lo > 0 and hi / lo > 100:
+            return LogUniform(lo, hi)
+
+        # Both ints → IntUniform
+        if isinstance(value[0], int) and isinstance(value[1], int):
+            return IntUniform(int(lo), int(hi))
+
+        return Uniform(lo, hi)
+
+    raise ValueError(
+        f"Can't infer dimension for '{name}': {value!r}. "
+        f"Use a tuple (lo, hi), a list of choices, or a dimension object."
+    )
+
+
+def _normalize_search_space(space):
+    """Convert a user-friendly search space dict to dimension objects.
+
+    Accepts plain tuples, lists, or dimension objects.
+    """
+    normalized = {}
+    for name, value in space.items():
+        normalized[name] = _infer_dim(name, value)
+    return normalized
 
 
 def _resolve_backend(backend):

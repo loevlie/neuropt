@@ -23,14 +23,15 @@ Write a training script. You define two things: a `search_space` dict (what to s
 
 ```python
 # train.py
-import torch
 import torch.nn as nn
-from swarmopt import LogUniform, IntUniform, Categorical
 
+# Plain Python — tuples for ranges, lists for choices.
+# swarmopt auto-detects the right sampling strategy from
+# the param name (e.g. "lr" → log-scale, "n_layers" → integer).
 search_space = {
-    "lr": LogUniform(1e-4, 1e-1),
-    "hidden_dim": IntUniform(32, 512),
-    "activation": Categorical(["relu", "gelu", "silu"]),
+    "lr": (1e-4, 1e-1),
+    "hidden_dim": (32, 512),
+    "activation": ["relu", "gelu", "silu"],
 }
 
 ACTIVATIONS = {"relu": nn.ReLU, "gelu": nn.GELU, "silu": nn.SiLU}

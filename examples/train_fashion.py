@@ -14,26 +14,24 @@ import torchvision
 import torchvision.transforms as T
 from torch.utils.data import DataLoader, Subset
 
-from swarmopt import LogUniform, Uniform, IntUniform, Categorical
-
-
 # ── Search space ─────────────────────────────────────────────────────────
+# Plain tuples and lists — swarmopt infers LogUniform, IntUniform, etc.
 
 search_space = {
-    "n_blocks":       IntUniform(2, 8),
-    "base_channels":  IntUniform(16, 128),
-    "channel_growth": Uniform(1.0, 2.5),
-    "kernel_size":    Categorical([3, 5]),
-    "activation":     Categorical(["relu", "gelu", "leaky_relu", "silu"]),
-    "use_residual":   Categorical([True, False]),
-    "use_batchnorm":  Categorical([True, False]),
-    "dropout":        Uniform(0.0, 0.5),
-    "pool_every":     IntUniform(1, 4),
-    "pool_type":      Categorical(["max", "avg"]),
-    "fc_hidden":      IntUniform(0, 512),
-    "lr":             LogUniform(1e-4, 0.1),
-    "wd":             LogUniform(1e-6, 0.01),
-    "optimizer":      Categorical(["sgd", "adam", "adamw"]),
+    "n_blocks":       (2, 8),
+    "base_channels":  (16, 128),
+    "channel_growth": (1.0, 2.5),
+    "kernel_size":    [3, 5],
+    "activation":     ["relu", "gelu", "leaky_relu", "silu"],
+    "use_residual":   [True, False],
+    "use_batchnorm":  [True, False],
+    "dropout":        (0.0, 0.5),
+    "pool_every":     (1, 4),
+    "pool_type":      ["max", "avg"],
+    "fc_hidden":      (0, 512),
+    "lr":             (1e-4, 0.1),
+    "wd":             (1e-6, 0.01),
+    "optimizer":      ["sgd", "adam", "adamw"],
 }
 
 
