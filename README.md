@@ -43,12 +43,40 @@ Every one of the top 10 architectures landed on the same design pattern:
 pip install swarmopt[llm]
 ```
 
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-python examples/llm_arch_search.py
+```python
+from swarmopt import ArchSearch, LogUniform, Uniform, IntUniform, Categorical
+
+search = ArchSearch(
+    train_fn=my_train_fn,   # you provide this
+    search_space={
+        "lr": LogUniform(1e-4, 1e-1),
+        "n_layers": IntUniform(2, 8),
+        "hidden_dim": IntUniform(32, 256),
+        "dropout": Uniform(0.0, 0.5),
+        "activation": Categorical(["relu", "gelu", "silu"]),
+        "optimizer": Categorical(["adam", "adamw", "sgd"]),
+    },
+    backend="claude",       # or "openai", "qwen", "none"
+)
+search.run()  # runs until Ctrl+C
 ```
 
-That's it. Runs until you Ctrl+C. Logs every experiment to `arch_search.jsonl` — crash-safe, resumable.
+Your `train_fn` takes a config dict, trains a model, returns a dict with at least `"score"`. For smarter LLM decisions, also return per-epoch metrics:
+
+```python
+def train_fn(config):
+    model = build_model(config)
+    # ... train for N epochs, tracking losses ...
+    return {
+        "score": val_loss,
+        "accuracy": val_acc,
+        "train_losses": [2.3, 1.1, 0.6, 0.4],   # per-epoch
+        "val_losses": [2.1, 1.0, 0.7, 0.5],
+        "val_accuracies": [0.2, 0.5, 0.7, 0.8],
+    }
+```
+
+Everything logs to JSONL — crash-safe, resumable. See [`examples/llm_arch_search.py`](examples/llm_arch_search.py) for a full CNN architecture search on FashionMNIST.
 
 ## What the LLM actually sees
 
