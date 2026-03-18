@@ -1,7 +1,7 @@
 [project]
 name = "swarmopt"
-version = "0.2.0"
-description = "LLM-guided neural architecture search — reads your training curves, designs better models overnight"
+version = "0.3.0"
+description = "LLM-guided ML optimization — reads your training curves, designs better models overnight"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -10,7 +10,7 @@ authors = [
 ]
 keywords = [
     "neural-architecture-search", "llm", "automl", "hyperparameter",
-    "optimization", "pso", "pytorch", "machine-learning",
+    "optimization", "pytorch", "machine-learning",
     "architecture-search", "training-curves",
 ]
 classifiers = [
@@ -26,9 +26,8 @@ classifiers = [
 ]
 dependencies = [
     "cloudpickle>=3.0",
-    "matplotlib>=3.7",
     "numpy>=1.24",
-    "pandas>=2.0",
+    "typer>=0.9",
 ]
 
 [project.optional-dependencies]
@@ -36,12 +35,17 @@ torch = ["torch>=2.0", "torchvision>=0.15"]
 llm = ["anthropic>=0.40"]
 llm-openai = ["openai>=1.0"]
 llm-local = ["transformers>=4.37", "accelerate>=0.25"]
+viz = ["matplotlib>=3.7", "pandas>=2.0"]
 all = [
     "torch>=2.0", "torchvision>=0.15",
     "anthropic>=0.40", "openai>=1.0",
     "transformers>=4.37", "accelerate>=0.25",
+    "matplotlib>=3.7", "pandas>=2.0",
 ]
 dev = ["pytest", "optuna"]
+
+[project.scripts]
+swarmopt = "swarmopt.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/loevlie/swarmopt"
