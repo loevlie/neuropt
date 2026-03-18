@@ -168,6 +168,10 @@ search.run()
 
 ## What happened overnight
 
+<p align="center">
+  <img src="assets/results.png" alt="Convergence plot showing LLM decisions over 1,239 experiments" width="800">
+</p>
+
 Starting from completely random architectures, the LLM read the training curves and narrowed in:
 
 ```
