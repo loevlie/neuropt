@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Data & results
+data/
+*.jsonl
+*.tsv
+*.lock
+results/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Root-level scratch files (old prototypes)
+/log_vs_linear_sampling.png
+/pso_results.png
+/pso_lightning_chat.ipynb
+/sa_lightning_chat.ipynb
