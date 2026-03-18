@@ -1,7 +1,7 @@
 [project]
 name = "swarmopt"
 version = "0.2.0"
-description = "PSO hyperparameter tuner for PyTorch — with optional LLM-guided architecture search"
+description = "LLM-guided neural architecture search — reads your training curves, designs better models overnight"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -9,8 +9,9 @@ authors = [
     {name = "Dennis Loevlie"},
 ]
 keywords = [
-    "hyperparameter", "optimization", "pso", "particle-swarm",
-    "neural-architecture-search", "pytorch", "machine-learning", "llm",
+    "neural-architecture-search", "llm", "automl", "hyperparameter",
+    "optimization", "pso", "pytorch", "machine-learning",
+    "architecture-search", "training-curves",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
