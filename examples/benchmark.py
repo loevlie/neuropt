@@ -274,7 +274,8 @@ def run_random(n_evals, train_loader, val_loader):
 def main():
     parser = argparse.ArgumentParser(description="Benchmark: LLM vs Optuna vs Random")
     parser.add_argument("--n-evals", type=int, default=15)
-    parser.add_argument("--skip-qwen", action="store_true", help="Skip local Qwen (slow to load)")
+    parser.add_argument("--skip-qwen", action="store_true", help="Skip local Qwen")
+    parser.add_argument("--skip-claude", action="store_true", help="Skip Claude API")
     parser.add_argument("--skip-optuna", action="store_true")
     args = parser.parse_args()
 
@@ -295,13 +296,14 @@ def main():
     all_results = {}
 
     # 1. LLM (Claude)
-    print("=" * 60)
-    print("LLM Search (Claude)")
-    print("=" * 60)
-    try:
-        all_results["LLM (Claude)"] = run_llm_search("claude", args.n_evals, train_loader, val_loader)
-    except Exception as e:
-        print(f"  Skipped: {e}")
+    if not args.skip_claude:
+        print("=" * 60)
+        print("LLM Search (Claude)")
+        print("=" * 60)
+        try:
+            all_results["LLM (Claude)"] = run_llm_search("claude", args.n_evals, train_loader, val_loader)
+        except Exception as e:
+            print(f"  Skipped: {e}")
 
     # 2. LLM (Qwen local)
     if not args.skip_qwen:
@@ -350,6 +352,14 @@ def main():
         print(line)
 
     # Save
+    # Save per-method results separately so they don't overwrite each other
+    for name, r in all_results.items():
+        slug = name.lower().replace(" ", "_").replace("(", "").replace(")", "")
+        path = f"/tmp/bench_200_{slug}.json"
+        with open(path, "w") as f:
+            json.dump(r, f, indent=2, default=str)
+        print(f"  Saved {name} → {path}")
+
     out_path = "benchmark_results.json"
     with open(out_path, "w") as f:
         json.dump(all_results, f, indent=2, default=str)
