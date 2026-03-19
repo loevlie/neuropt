@@ -31,7 +31,7 @@ from torch.utils.data import DataLoader, Subset
 
 ACTIVATIONS = {"relu": nn.ReLU, "gelu": nn.GELU, "leaky_relu": nn.LeakyReLU, "silu": nn.SiLU}
 DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-EPOCHS = 10
+EPOCHS = 5
 
 
 def get_dataloaders():
@@ -271,7 +271,7 @@ def run_random(n_evals, train_loader, val_loader):
 
 def main():
     parser = argparse.ArgumentParser(description="Benchmark: LLM vs Optuna vs Random")
-    parser.add_argument("--n-evals", type=int, default=30)
+    parser.add_argument("--n-evals", type=int, default=15)
     parser.add_argument("--skip-qwen", action="store_true", help="Skip local Qwen (slow to load)")
     parser.add_argument("--skip-optuna", action="store_true")
     args = parser.parse_args()

@@ -321,7 +321,7 @@ class ArchSearch:
                 for _ in range(self.batch_size)], "random"
 
     def _find_duplicates(self, configs, history):
-        """Return indices of configs that match previous experiments."""
+        """Return indices of configs that match history OR each other in the batch."""
         seen = set()
         for row in history:
             cfg = row.get("config", {})
@@ -329,8 +329,11 @@ class ArchSearch:
 
         dupes = []
         for i, cfg in enumerate(configs):
-            if _config_key(cfg) in seen:
+            key = _config_key(cfg)
+            if key in seen:
                 dupes.append(i)
+            else:
+                seen.add(key)  # also dedup within the batch
         return dupes
 
     def _build_retry_prompt(self, configs, dupe_indices, history):
@@ -527,9 +530,14 @@ class ArchSearch:
         # Task
         parts.append(f"## Task\n")
         parts.append(
-            f"Propose exactly {self.batch_size} configs to try next. "
-            "Each config must be DIFFERENT from anything in the history above. "
-            "Don't repeat configs — focus on finding the biggest possible improvement.\n"
+            f"Propose exactly {self.batch_size} configs to try next.\n\n"
+            "Rules:\n"
+            "- Every config must be DIFFERENT from the history AND from each other\n"
+            "- At least 1 config should explore something new (different activation, "
+            "architecture size, optimizer, or a parameter you haven't varied recently)\n"
+            "- Don't just repeat the best config with tiny tweaks — try to find a "
+            "meaningfully better design\n"
+            "- If the best configs are clustering, try something outside that cluster\n\n"
             "Respond with ONLY a JSON array of config objects. "
             "No explanation, no markdown fences."
         )
