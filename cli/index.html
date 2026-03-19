@@ -702,13 +702,15 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Model: 11,689,512 parameters
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>  Activations: ReLU (9 layers)
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>  BatchNorm: 20 layers
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>Search space (5 params):
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>  activation: Categorical([&#39;relu&#39;, &#39;gelu&#39;, &#39;silu&#39;, &#39;leaky_relu&#39;])
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>  use_batchnorm: Categorical([True, False])
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>  lr: LogUniform(0.0001, 0.1)
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>  wd: LogUniform(1e-06, 0.01)
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>  optimizer: Categorical([&#39;sgd&#39;, &#39;adam&#39;, &#39;adamw&#39;])
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>  Pooling: 1 layers (current: avg)
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>Search space (7 params):
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>  activation: Categorical([&#39;relu&#39;, &#39;gelu&#39;, &#39;silu&#39;, &#39;leaky_relu&#39;, &#39;mish&#39;, &#39;hardswish&#39;, &#39;prelu&#39;])
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>  use_batchnorm: Categorical([True, False])
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>  pool_type: Categorical([&#39;avg&#39;, &#39;max&#39;, &#39;attention&#39;])
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>  lr: LogUniform(0.0001, 0.1)
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>  wd: LogUniform(1e-06, 0.01)
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>  optimizer: Categorical([&#39;sgd&#39;, &#39;adam&#39;, &#39;adamw&#39;])
 </code></pre></div>
 <p>Only works with scripts that define a <code>model</code> variable.</p>
 <h2 id="neuropt-results"><code>neuropt results</code></h2>
