@@ -302,10 +302,11 @@ class ArchSearch:
             if self._shutdown:
                 break
 
-            # Extract insights only when experiments are about to scroll
-            # out of the 20-experiment prompt window
+            # Extract insights when experiments start scrolling out of
+            # the 20-experiment prompt window — triggers every ~20 experiments
             if (self._backend and source == "llm"
-                    and len(history) > 20 and len(history) % 20 == 0):
+                    and len(history) > 20
+                    and len(history) // 20 > (len(history) - self.batch_size) // 20):
                 self._extract_insights(history)
 
             print(f"  iter {iteration} done in {time.time() - iter_start:.1f}s | "
