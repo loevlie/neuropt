@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install from source
+        run: uv sync
+
+      - name: Test PyPI install (clean venv)
+        run: |
+          uv venv /tmp/pypi-test --seed
+          /tmp/pypi-test/bin/pip install neuropt
+          /tmp/pypi-test/bin/python -c "from neuropt import ArchSearch; print('PyPI install OK')"
+
+      - name: Run tests
+        run: |
+          uv add --dev pytest torch torchvision scikit-learn
+          uv run python -m pytest tests/test_core.py -v
+
+      - name: Import check
+        run: |
+          uv run python -c "from neuropt import ArchSearch, LogUniform, Uniform, IntUniform, Categorical"
+          uv run python -c "from neuropt.backends import get_default_backend, get_backend_by_name"
+          uv run python -c "from neuropt.introspect import introspect, is_sklearn_compatible"
+          uv run python -c "from neuropt.cli import app"
+
+      - name: Smoke test (random search)
+        run: |
+          uv run python -c "
+          from neuropt import ArchSearch
+          search = ArchSearch(
+              train_fn=lambda cfg: {'score': cfg['lr'] * 10},
+              search_space={'lr': (1e-4, 1e-1), 'x': [1, 2, 3]},
+              backend='none',
+              log_path='/tmp/ci_test.jsonl',
+          )
+          search.run(max_evals=3)
+          assert search.best_score < 1.0
+          print('OK')
+          "
+
+      - name: XGBoost from_model test
+        run: |
+          uv add --dev xgboost scikit-learn
+          uv run python -c "
+          from sklearn.datasets import load_iris
+          from sklearn.model_selection import train_test_split
+          from xgboost import XGBClassifier
+          from neuropt import ArchSearch
+
+          X, y = load_iris(return_X_y=True)
+          X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+          model = XGBClassifier(verbosity=0, n_estimators=10)
+
+          def train_fn(config):
+              m = config['model']
+              m.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+              r = m.evals_result()
+              return {
+                  'score': r['validation_0']['mlogloss'][-1],
+                  'train_losses': r['validation_0']['mlogloss'],
+              }
+
+          search = ArchSearch.from_model(model, train_fn, backend='none', log_path='/tmp/ci_xgb.jsonl')
+          search.run(max_evals=3)
+          assert search.best_score < 2.0
+          print(f'XGBoost OK: best={search.best_score:.4f}')
+          "
+
+      - name: CLI test
+        run: |
+          uv run neuropt --help
+          echo 'search_space = {"x": (1, 10)}' > /tmp/ci_script.py
+          echo 'def train_fn(config): return {"score": config["x"]}' >> /tmp/ci_script.py
+          uv run neuropt run /tmp/ci_script.py --backend none -n 3 --log /tmp/ci_cli.jsonl

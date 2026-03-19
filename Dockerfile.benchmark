@@ -1,0 +1,33 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1
+
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
+# Install CPU-only PyTorch first (separate index)
+RUN pip install --no-cache-dir \
+    torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# Install neuropt + benchmark deps from PyPI
+RUN pip install --no-cache-dir \
+    neuropt[llm] \
+    optuna \
+    xgboost \
+    lightgbm \
+    scikit-learn \
+    transformers \
+    datasets \
+    matplotlib \
+    numpy
+
+# Copy benchmark suite
+COPY examples/benchmark_suite.py /app/benchmark_suite.py
+
+# Verify CLI works
+RUN neuropt --help
+
+# Default: run fast tabular tasks with random backend (no API key needed)
+ENTRYPOINT ["python", "benchmark_suite.py"]
+CMD ["--backend", "none", "--n-evals", "5", "--tasks", "rf_breast_cancer", "xgb_covertype", "lgbm_housing"]

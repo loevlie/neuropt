@@ -1,0 +1,70 @@
+site_name: neuropt
+site_url: https://loevlie.github.io/neuropt/
+site_description: LLM-guided ML optimization — an LLM reads your training curves and designs your next experiment
+repo_url: https://github.com/loevlie/neuropt
+repo_name: loevlie/neuropt
+
+theme:
+  name: material
+  logo: assets/icon.png
+  favicon: assets/icon.png
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - content.code.annotate
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - navigation.tabs
+    - search.highlight
+    - search.suggest
+  icon:
+    repo: fontawesome/brands/github
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Quick Start: quickstart.md
+    - How It Works: how-it-works.md
+    - CLI Reference: cli.md
+    - Python API: api.md
+  - Features:
+    - Model Introspection: introspection.md
+    - Fine-Tuning: fine-tuning.md
+  - Examples:
+    - PyTorch: examples.md
+    - XGBoost & sklearn: xgboost.md
+    - Benchmarks: benchmarks.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html
+  - tables
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg

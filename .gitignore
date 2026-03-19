@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Data & results
+data/
+*.jsonl
+benchmark_results.json
+benchmark_xgboost_results.json
+benchmark_xgboost_covertype.json
+benchmark_xgboost_breast_cancer.json
+*.tsv
+*.lock
+results/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Build artifacts
+site/
+
+# OS
+.DS_Store
+
+# Drafts
+social_draft.md
+demo.tape
+
+# Claude Code / AI tools
+.claude/
+.agents/
+skills-lock.json
+
+# Benchmark result files
+benchmark_memory_results.json
+benchmark_simple_results.json
+benchmark_suite_results.json
+
+# Root-level scratch files (old prototypes)
+/log_vs_linear_sampling.png
+/pso_results.png
+/pso_lightning_chat.ipynb
+/sa_lightning_chat.ipynb
