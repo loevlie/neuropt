@@ -2,7 +2,7 @@
 
 import copy
 
-from swarmopt.search_space import Categorical, LogUniform, Uniform
+from neuropt.search_space import Categorical, LogUniform, Uniform
 
 
 # Activation types we know how to swap

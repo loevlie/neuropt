@@ -1,7 +1,7 @@
 [project]
-name = "swarmopt"
+name = "neuropt"
 version = "0.3.0"
-description = "LLM-guided ML optimization — reads your training curves, designs better models overnight"
+description = "LLM-guided ML optimization — point it at a training script, it reads the curves and designs better models"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -45,19 +45,19 @@ all = [
 dev = ["pytest", "optuna"]
 
 [project.scripts]
-swarmopt = "swarmopt.cli:app"
+neuropt = "neuropt.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/loevlie/swarmopt"
-Repository = "https://github.com/loevlie/swarmopt"
-Issues = "https://github.com/loevlie/swarmopt/issues"
+Homepage = "https://github.com/loevlie/neuropt"
+Repository = "https://github.com/loevlie/neuropt"
+Issues = "https://github.com/loevlie/neuropt/issues"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["swarmopt"]
+packages = ["neuropt"]
 
 [dependency-groups]
 dev = [

@@ -27,15 +27,15 @@ jobs:
 
       - name: Import check
         run: |
-          uv run python -c "from swarmopt import ArchSearch, LogUniform, Uniform, IntUniform, Categorical"
-          uv run python -c "from swarmopt.backends import get_default_backend, get_backend_by_name"
-          uv run python -c "from swarmopt.introspect import introspect"
-          uv run python -c "from swarmopt.cli import app"
+          uv run python -c "from neuropt import ArchSearch, LogUniform, Uniform, IntUniform, Categorical"
+          uv run python -c "from neuropt.backends import get_default_backend, get_backend_by_name"
+          uv run python -c "from neuropt.introspect import introspect"
+          uv run python -c "from neuropt.cli import app"
 
       - name: Smoke test (random search, no LLM)
         run: |
           uv run python -c "
-          from swarmopt import ArchSearch
+          from neuropt import ArchSearch
           search = ArchSearch(
               train_fn=lambda cfg: {'score': cfg['lr'] * 10},
               search_space={'lr': (1e-4, 1e-1), 'x': [1, 2, 3]},

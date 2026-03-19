@@ -1,7 +1,7 @@
 """Claude API backend via the anthropic SDK."""
 
 import os
-from swarmopt.backends.base import BaseLLMBackend
+from neuropt.backends.base import BaseLLMBackend
 
 
 class ClaudeBackend(BaseLLMBackend):

@@ -1,6 +1,6 @@
 """Local Qwen2.5-1.5B-Instruct backend running on CPU (experimental)."""
 
-from swarmopt.backends.base import BaseLLMBackend
+from neuropt.backends.base import BaseLLMBackend
 
 
 class QwenBackend(BaseLLMBackend):

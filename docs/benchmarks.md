@@ -46,7 +46,7 @@ Claude starts with knowledge of these interactions. Optuna has to discover each 
 ### Run it yourself
 
 ```bash
-pip install swarmopt[llm]
+pip install neuropt[llm]
 export ANTHROPIC_API_KEY="sk-ant-..."
 
 python examples/benchmark.py

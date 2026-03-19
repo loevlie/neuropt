@@ -1,7 +1,7 @@
 """
-Example training script for swarmopt CLI.
+Example training script for neuropt CLI.
 
-    swarmopt run examples/train_fashion.py --backend claude
+    neuropt run examples/train_fashion.py --backend claude
 
 Defines search_space + train_fn. That's it.
 """
@@ -15,7 +15,7 @@ import torchvision.transforms as T
 from torch.utils.data import DataLoader, Subset
 
 # ── Search space ─────────────────────────────────────────────────────────
-# Plain tuples and lists — swarmopt infers LogUniform, IntUniform, etc.
+# Plain tuples and lists — neuropt infers LogUniform, IntUniform, etc.
 
 search_space = {
     "n_blocks":       (2, 8),

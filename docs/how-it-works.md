@@ -26,7 +26,7 @@ Each iteration:
 
 Most tuning tools give the optimizer a single number: *"this config scored 0.85."*
 
-swarmopt shows the full picture:
+neuropt shows the full picture:
 
 ```
 lr=0.05, activation=relu, use_residual=False:

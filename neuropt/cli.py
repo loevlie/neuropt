@@ -1,4 +1,4 @@
-"""CLI entry point: swarmopt my_train.py --backend claude"""
+"""CLI entry point: neuropt my_train.py --backend claude"""
 
 import importlib.util
 import sys
@@ -8,7 +8,7 @@ from typing import Optional
 import typer
 
 app = typer.Typer(
-    name="swarmopt",
+    name="neuropt",
     help="LLM-guided ML optimization. Point it at a training script, let it run overnight.",
     add_completion=False,
 )
@@ -68,7 +68,7 @@ def run(
 
     Optional: ml_context = "..." to give the LLM domain knowledge.
     """
-    from swarmopt import ArchSearch
+    from neuropt import ArchSearch
 
     train_fn, search_space, model, ml_context = _load_script(script)
 
@@ -96,8 +96,8 @@ def run(
 def inspect(
     script: Path = typer.Argument(..., help="Training script with a 'model' variable"),
 ):
-    """Show what swarmopt would search over for a given model."""
-    from swarmopt.introspect import introspect, build_search_space
+    """Show what neuropt would search over for a given model."""
+    from neuropt.introspect import introspect, build_search_space
 
     _, _, model, _ = _load_script(script)
     if model is None:

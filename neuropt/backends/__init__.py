@@ -1,6 +1,6 @@
 """LLM backend auto-detection and loading."""
 
-from swarmopt.backends.base import BaseLLMBackend
+from neuropt.backends.base import BaseLLMBackend
 
 
 def get_default_backend():
@@ -12,7 +12,7 @@ def get_default_backend():
 
     if os.environ.get("ANTHROPIC_API_KEY"):
         try:
-            from swarmopt.backends.claude_backend import ClaudeBackend
+            from neuropt.backends.claude_backend import ClaudeBackend
             backend = ClaudeBackend()
             if backend.is_available():
                 return backend
@@ -21,7 +21,7 @@ def get_default_backend():
 
     if os.environ.get("OPENAI_API_KEY"):
         try:
-            from swarmopt.backends.openai_backend import OpenAIBackend
+            from neuropt.backends.openai_backend import OpenAIBackend
             backend = OpenAIBackend()
             if backend.is_available():
                 return backend
@@ -29,7 +29,7 @@ def get_default_backend():
             pass
 
     try:
-        from swarmopt.backends.local_qwen import QwenBackend
+        from neuropt.backends.local_qwen import QwenBackend
         backend = QwenBackend()
         if backend.is_available():
             return backend
@@ -44,13 +44,13 @@ def get_backend_by_name(name):
     if name == "none":
         return None
     elif name == "claude":
-        from swarmopt.backends.claude_backend import ClaudeBackend
+        from neuropt.backends.claude_backend import ClaudeBackend
         return ClaudeBackend()
     elif name == "openai":
-        from swarmopt.backends.openai_backend import OpenAIBackend
+        from neuropt.backends.openai_backend import OpenAIBackend
         return OpenAIBackend()
     elif name == "qwen":
-        from swarmopt.backends.local_qwen import QwenBackend
+        from neuropt.backends.local_qwen import QwenBackend
         return QwenBackend()
     else:
         raise ValueError(f"Unknown backend: {name!r}. Use 'claude', 'openai', 'qwen', or 'none'.")

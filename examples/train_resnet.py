@@ -1,9 +1,9 @@
 """
-Simplest possible swarmopt usage: give it a model, write a train loop.
+Simplest possible neuropt usage: give it a model, write a train loop.
 
-    swarmopt run examples/train_resnet.py --backend claude
+    neuropt run examples/train_resnet.py --backend claude
 
-swarmopt introspects the model, figures out what to search
+neuropt introspects the model, figures out what to search
 (activations, batch norm, dropout, lr, wd, optimizer), and runs.
 """
 

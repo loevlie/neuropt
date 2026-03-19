@@ -7,7 +7,7 @@ The main class. Use it directly in notebooks or scripts.
 ### From a search space
 
 ```python
-from swarmopt import ArchSearch
+from neuropt import ArchSearch
 
 search = ArchSearch(
     train_fn=train_fn,
@@ -28,7 +28,7 @@ print(search.best_score)
 ### From a model
 
 ```python
-from swarmopt import ArchSearch
+from neuropt import ArchSearch
 
 search = ArchSearch.from_model(
     model=my_model,
@@ -111,7 +111,7 @@ Names like `lr`, `learning_rate`, `wd`, `weight_decay` automatically get log-sca
 For full control over ranges and sampling:
 
 ```python
-from swarmopt import LogUniform, Uniform, IntUniform, Categorical
+from neuropt import LogUniform, Uniform, IntUniform, Categorical
 
 search_space = {
     "lr": LogUniform(1e-4, 1e-1),

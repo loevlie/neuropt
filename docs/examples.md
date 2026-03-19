@@ -5,10 +5,10 @@
 Full search over 14 parameters — architecture and training hyperparameters.
 
 ```bash
-swarmopt run examples/train_fashion.py --backend claude
+neuropt run examples/train_fashion.py --backend claude
 ```
 
-Source: [`examples/train_fashion.py`](https://github.com/loevlie/swarmopt/blob/main/examples/train_fashion.py)
+Source: [`examples/train_fashion.py`](https://github.com/loevlie/neuropt/blob/main/examples/train_fashion.py)
 
 Searches over: block count, channel width, channel growth, kernel size, activation, residual connections, batch norm, dropout, pooling strategy, FC head size, learning rate, weight decay, optimizer.
 
@@ -17,10 +17,10 @@ Searches over: block count, channel width, channel growth, kernel size, activati
 Give it a ResNet, it figures out what to tune.
 
 ```bash
-swarmopt run examples/train_resnet.py --backend claude
+neuropt run examples/train_resnet.py --backend claude
 ```
 
-Source: [`examples/train_resnet.py`](https://github.com/loevlie/swarmopt/blob/main/examples/train_resnet.py)
+Source: [`examples/train_resnet.py`](https://github.com/loevlie/neuropt/blob/main/examples/train_resnet.py)
 
 Automatically discovers 9 ReLU layers and 20 BatchNorm layers, generates a search space of 5 parameters.
 

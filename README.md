@@ -1,4 +1,4 @@
-# swarmopt
+# neuropt
 
 <p align="center">
   <img src="assets/banner.png" alt="Three robot researchers designing neural network architectures" width="700">
@@ -15,7 +15,7 @@ Point it at a training script, let it run overnight. The LLM sees full per-epoch
 ### vs Optuna and random search
 
 <p align="center">
-  <img src="assets/benchmark.png" alt="Benchmark: swarmopt vs Optuna vs Random" width="700">
+  <img src="assets/benchmark.png" alt="Benchmark: neuropt vs Optuna vs Random" width="700">
 </p>
 
 Same 15-eval budget, 14-parameter CNN search space. These results use **Claude Haiku 4.5** (the smallest and cheapest of their 4.5 models). We expect even stronger results with Sonnet or Opus. Optuna's TPE was configured with `n_startup_trials=3` for a fair comparison (default is 10, which would make it purely random for most of the budget).
@@ -23,7 +23,7 @@ Same 15-eval budget, 14-parameter CNN search space. These results use **Claude H
 ## Quick start
 
 ```bash
-pip install swarmopt[llm]
+pip install neuropt[llm]
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
@@ -47,7 +47,7 @@ def train_fn(config):
 
 ```python
 # train.py
-model = torchvision.models.resnet18(num_classes=10)  # swarmopt introspects this
+model = torchvision.models.resnet18(num_classes=10)  # neuropt introspects this
 
 def train_fn(config):
     m = config["model"].to("cuda")  # deep copy with modifications applied
@@ -58,13 +58,13 @@ def train_fn(config):
 Then run:
 
 ```bash
-swarmopt run train.py
+neuropt run train.py
 ```
 
 Runs until Ctrl+C. Crash-safe, resumable. Works in notebooks too:
 
 ```python
-from swarmopt import ArchSearch
+from neuropt import ArchSearch
 
 search = ArchSearch(train_fn=train_fn, search_space=search_space, backend="claude")
 search.run(max_evals=50)
@@ -72,21 +72,21 @@ search.run(max_evals=50)
 
 ## Documentation
 
-See the [full documentation](https://loevlie.github.io/swarmopt/) for:
+See the [full documentation](https://loevlie.github.io/neuropt/) for:
 
-- [How it works](https://loevlie.github.io/swarmopt/how-it-works/) — what the LLM sees, training curve analysis
-- [CLI reference](https://loevlie.github.io/swarmopt/cli/) — `swarmopt run`, `inspect`, `results`
-- [Python API](https://loevlie.github.io/swarmopt/api/) — `ArchSearch`, `from_model`, search space types
-- [Examples](https://loevlie.github.io/swarmopt/examples/) — CNN search, ResNet tuning
-- [Benchmarks](https://loevlie.github.io/swarmopt/benchmarks/) — vs Optuna, random search
+- [How it works](https://loevlie.github.io/neuropt/how-it-works/) — what the LLM sees, training curve analysis
+- [CLI reference](https://loevlie.github.io/neuropt/cli/) — `neuropt run`, `inspect`, `results`
+- [Python API](https://loevlie.github.io/neuropt/api/) — `ArchSearch`, `from_model`, search space types
+- [Examples](https://loevlie.github.io/neuropt/examples/) — CNN search, ResNet tuning
+- [Benchmarks](https://loevlie.github.io/neuropt/benchmarks/) — vs Optuna, random search
 
 ## Installation
 
 ```bash
-pip install swarmopt                # core
-pip install swarmopt[llm]           # + Claude API (recommended)
-pip install swarmopt[llm-openai]    # + OpenAI API
-pip install swarmopt[all]           # everything
+pip install neuropt                # core
+pip install neuropt[llm]           # + Claude API (recommended)
+pip install neuropt[llm-openai]    # + OpenAI API
+pip install neuropt[all]           # everything
 ```
 
 ## License

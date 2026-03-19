@@ -1,4 +1,4 @@
-# swarmopt
+# neuropt
 
 LLM-guided ML optimization. Point it at a training script, let it run overnight.
 
@@ -7,7 +7,7 @@ The LLM sees full per-epoch train/val curves, spots overfitting, and proposes wh
 ## Install
 
 ```bash
-pip install swarmopt[llm]
+pip install neuropt[llm]
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
@@ -45,19 +45,19 @@ def train_fn(config):
     return {"score": val_loss, "train_losses": [...], "val_losses": [...]}
 ```
 
-swarmopt walks the module tree, finds activations/dropout/batch norm, and generates a search space automatically. Your model is deep-copied each experiment — the original is never touched.
+neuropt walks the module tree, finds activations/dropout/batch norm, and generates a search space automatically. Your model is deep-copied each experiment — the original is never touched.
 
 ### Run it
 
 ```bash
-swarmopt run train.py
-swarmopt run train.py --backend claude -n 50  # stop after 50 experiments
+neuropt run train.py
+neuropt run train.py --backend claude -n 50  # stop after 50 experiments
 ```
 
 Or in a notebook:
 
 ```python
-from swarmopt import ArchSearch
+from neuropt import ArchSearch
 
 search = ArchSearch(train_fn=train_fn, search_space=search_space, backend="claude")
 search.run(max_evals=50)

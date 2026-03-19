@@ -14,7 +14,7 @@ import sys
 import time
 import traceback
 
-from swarmopt.search_space import Categorical, IntUniform, LogUniform, Uniform
+from neuropt.search_space import Categorical, IntUniform, LogUniform, Uniform
 
 
 DEFAULT_ML_CONTEXT = """\
@@ -83,7 +83,7 @@ class ArchSearch:
             backend: LLM backend (same as __init__).
             **kwargs: Passed to __init__ (log_path, batch_size, device, etc).
         """
-        from swarmopt.introspect import (
+        from neuropt.introspect import (
             introspect, build_search_space, build_ml_context,
             make_wrapped_train_fn,
         )
@@ -724,10 +724,10 @@ def _resolve_backend(backend):
     if backend is None or backend == "none":
         return None
     if backend == "auto":
-        from swarmopt.backends import get_default_backend
+        from neuropt.backends import get_default_backend
         return get_default_backend()
     if isinstance(backend, str):
-        from swarmopt.backends import get_backend_by_name
+        from neuropt.backends import get_backend_by_name
         return get_backend_by_name(backend)
     return backend  # assume it's a backend instance
 

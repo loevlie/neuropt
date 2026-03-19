@@ -1,8 +1,8 @@
-site_name: swarmopt
-site_url: https://loevlie.github.io/swarmopt/
+site_name: neuropt
+site_url: https://loevlie.github.io/neuropt/
 site_description: LLM-guided ML optimization
-repo_url: https://github.com/loevlie/swarmopt
-repo_name: loevlie/swarmopt
+repo_url: https://github.com/loevlie/neuropt
+repo_name: loevlie/neuropt
 
 theme:
   name: material

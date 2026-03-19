@@ -157,8 +157,8 @@ def random_config(rng):
 # ── Methods ──────────────────────────────────────────────────────────────
 
 def run_llm_search(backend_name, n_evals, train_loader, val_loader):
-    """Run swarmopt ArchSearch with a given backend."""
-    from swarmopt import ArchSearch
+    """Run neuropt ArchSearch with a given backend."""
+    from neuropt import ArchSearch
 
     log_path = f"/tmp/bench_{backend_name}.jsonl"
     if os.path.exists(log_path):
