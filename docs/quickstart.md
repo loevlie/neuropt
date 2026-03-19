@@ -35,9 +35,16 @@ Your function trains a model and returns results. neuropt calls it with differen
 
 ```python
 # train.py
+import torch.nn as nn
 
 def train_fn(config):
-    model = build_model(config["hidden_dim"], config["activation"])
+    # You use the config values to build your model
+    model = nn.Sequential(
+        nn.Linear(784, config["hidden_dim"]),
+        nn.ReLU() if config["activation"] == "relu" else nn.GELU(),
+        nn.Dropout(config["dropout"]),
+        nn.Linear(config["hidden_dim"], 10),
+    )
     optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"])
 
     train_losses, val_losses = [], []
