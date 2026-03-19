@@ -4,7 +4,7 @@
 
 All methods get exactly 15 evaluations on the same search space. FashionMNIST, 5 epochs per eval, M1 MacBook.
 
-![Benchmark results](assets/benchmark.png)
+![Benchmark results](assets/benchmark.png){ width="700" }
 
 | Method | Best Loss | Best Acc | LLM Fallbacks |
 |--------|-----------|----------|---------------|

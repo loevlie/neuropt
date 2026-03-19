@@ -1,7 +1,7 @@
 # Tuning XGBoost
 
 <p align="center">
-  <img src="assets/xgboost.png" alt="Robot tuning XGBoost parameters" width="500">
+  <img src="../assets/xgboost.png" alt="Robot tuning XGBoost parameters" width="500">
 </p>
 
 neuropt works with any sklearn-compatible model out of the box. Give it an estimator and a training function — it discovers the tunable parameters, asks the LLM for reasonable search ranges, and optimizes.
