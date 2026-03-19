@@ -198,6 +198,10 @@ class ArchSearch:
         self.llm_success = 0
         self.llm_fallback = 0
 
+        # LLM memory — insights persisted across iterations
+        self._insights_path = log_path.rsplit(".", 1)[0] + "_insights.json"
+        self._insights = self._load_insights()
+
     def run(self, max_evals: int | None = None):
         """Run the search loop.
 
@@ -297,10 +301,16 @@ class ArchSearch:
             if self._shutdown:
                 break
 
+            # Ask LLM for insights to remember
+            if self._backend and source == "llm":
+                self._extract_insights(history)
+
             print(f"  iter {iteration} done in {time.time() - iter_start:.1f}s | "
                   f"best: {self.best_score:.4f} | total: {self.total_experiments}")
             if self._backend:
                 print(f"  llm: {self.llm_success} ok, {self.llm_fallback} fallback")
+            if self._insights:
+                print(f"  insights: {len(self._insights)}")
             print()
             iteration += 1
 
@@ -481,6 +491,13 @@ class ArchSearch:
     def _build_prompt(self, history):
         parts = [self.ml_context.strip(), ""]
 
+        # Accumulated insights from previous iterations
+        if self._insights:
+            parts.append("## Key Insights (from previous iterations)\n")
+            for insight in self._insights:
+                parts.append(f"- {insight}")
+            parts.append("")
+
         # Search space
         parts.append("## Config Space\n")
         parts.append("Each config is a JSON object with these keys:")
@@ -603,6 +620,79 @@ class ArchSearch:
         return validated
 
     # ── Signal handling ────────────────────────────────────────────────────
+
+    # ── LLM memory ──────────────────────────────────────────────────────
+
+    def _load_insights(self):
+        if os.path.exists(self._insights_path):
+            with open(self._insights_path) as f:
+                return json.load(f)
+        return []
+
+    def _save_insights(self):
+        with open(self._insights_path, "w") as f:
+            json.dump(self._insights, f, indent=2)
+
+    def _extract_insights(self, history):
+        """Ask the LLM if it learned anything important this iteration."""
+        try:
+            recent = history[-self.batch_size:]
+            if not recent:
+                return
+
+            prompt = (
+                "You just ran these experiments:\n\n"
+            )
+            for row in recent:
+                cfg = row.get("config", {})
+                vl = row.get("val_loss")
+                vl_s = f"{vl:.4f}" if vl is not None else "inf"
+                prompt += f"- {_short_config(cfg)} → loss={vl_s}\n"
+
+            if self._insights:
+                prompt += "\nYou already know:\n"
+                for insight in self._insights:
+                    prompt += f"- {insight}\n"
+
+            prompt += (
+                "\nBased on ALL experiments so far, is there a critical insight "
+                "worth remembering for future iterations? Only respond if you "
+                "noticed something important (e.g., a parameter that always helps "
+                "or hurts, a range that always fails, an interaction between params).\n\n"
+                "Rules:\n"
+                "- Respond with 1-2 short bullet points, or NONE if nothing new\n"
+                "- Don't repeat insights you already know\n"
+                "- Be specific and actionable (e.g., 'dropout > 0.2 always hurts' "
+                "not 'dropout matters')\n"
+                "- Respond with ONLY the bullet points (starting with -) or the word NONE"
+            )
+
+            response = self._backend.generate(prompt, max_tokens=256)
+            response = response.strip()
+
+            if response.upper() == "NONE" or not response:
+                return
+
+            new_insights = []
+            for line in response.split("\n"):
+                line = line.strip().lstrip("•").lstrip("-").strip()
+                if line and len(line) > 5 and len(line) < 200:
+                    new_insights.append(line)
+
+            if new_insights:
+                existing = set(self._insights)
+                added = [i for i in new_insights if i not in existing]
+                if added:
+                    self._insights.extend(added)
+                    # Cap at 20 to keep prompt manageable
+                    if len(self._insights) > 20:
+                        self._insights = self._insights[-20:]
+                    self._save_insights()
+                    for insight in added:
+                        print(f"  [insight] {insight}")
+
+        except Exception:
+            pass  # never crash over insight extraction
 
     def _setup_signals(self):
         def handler(signum, frame):
