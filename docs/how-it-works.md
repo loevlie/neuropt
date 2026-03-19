@@ -62,7 +62,7 @@ Auto-detected in order:
 
 | Backend | How | Overhead |
 |---------|-----|----------|
-| Claude (Haiku 4.5) | `ANTHROPIC_API_KEY` env var | ~1s/call, ~$0.01/15-eval run |
+| Claude (Haiku 4.5) | `ANTHROPIC_API_KEY` env var | ~1s/call, cheapest option |
 | OpenAI | `OPENAI_API_KEY` env var | ~1-2s/call |
 | Local Qwen 2.5 1.5B | `--backend qwen` | ~3s/call, runs on CPU |
 | Random search | `--backend none` | Baseline comparison |
