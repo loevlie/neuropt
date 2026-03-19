@@ -13,6 +13,7 @@ wheels/
 data/
 *.jsonl
 benchmark_results.json
+benchmark_xgboost_results.json
 *.tsv
 *.lock
 results/
@@ -27,6 +28,10 @@ site/
 
 # OS
 .DS_Store
+
+# Drafts
+social_draft.md
+demo.tape
 
 # Root-level scratch files (old prototypes)
 /log_vs_linear_sampling.png
