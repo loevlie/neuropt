@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://loevlie.github.io/neuropt/xgboost/">
+        <link rel="canonical" href="https://loevlie.github.io/neuropt/introspection/">
       
       
-        <link rel="prev" href="../fine-tuning/">
+        <link rel="prev" href="../api/">
       
       
-        <link rel="next" href="../examples/">
+        <link rel="next" href="../fine-tuning/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Tuning XGBoost - neuropt</title>
+        <title>Model Introspection - neuropt</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#tuning-xgboost" class="md-skip">
+        <a href="#auto-model-introspection" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Tuning XGBoost
+              Model Introspection
             
           </span>
         </div>
@@ -351,10 +351,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../introspection/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Introspection
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -370,6 +397,92 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it works
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-gets-detected" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What gets detected
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#activations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Activations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dropout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dropout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#normalization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Normalization
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pooling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pooling
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -405,37 +518,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Tuning XGBoost
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../xgboost/" class="md-nav__link">
         
   
   
@@ -451,92 +537,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#quickstart" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quickstart
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#what-happens-under-the-hood" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What happens under the hood
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#what-the-llm-sees" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What the LLM sees
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#parameters-typically-searched" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Parameters typically searched
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#works-with-other-sklearn-models-too" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Works with other sklearn models too
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#notebook-usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Notebook usage
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -622,10 +622,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#quickstart" class="md-nav__link">
+  <a href="#how-it-works" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Quickstart
+        How it works
       
     </span>
   </a>
@@ -633,10 +633,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#what-happens-under-the-hood" class="md-nav__link">
+  <a href="#what-gets-detected" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What happens under the hood
+        What gets detected
       
     </span>
   </a>
@@ -644,10 +644,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#what-the-llm-sees" class="md-nav__link">
+  <a href="#activations" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What the LLM sees
+        Activations
       
     </span>
   </a>
@@ -655,10 +655,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#parameters-typically-searched" class="md-nav__link">
+  <a href="#dropout" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Parameters typically searched
+        Dropout
       
     </span>
   </a>
@@ -666,10 +666,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#works-with-other-sklearn-models-too" class="md-nav__link">
+  <a href="#normalization" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Works with other sklearn models too
+        Normalization
       
     </span>
   </a>
@@ -677,10 +677,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#notebook-usage" class="md-nav__link">
+  <a href="#pooling" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Notebook usage
+        Pooling
       
     </span>
   </a>
@@ -707,125 +707,174 @@
   
 
 
-<h1 id="tuning-xgboost">Tuning XGBoost</h1>
-<p align="center">
-  <img src="../assets/xgboost.png" alt="Robot tuning XGBoost parameters" width="500">
-</p>
-
-<p>neuropt works with any sklearn-compatible model out of the box. Give it an estimator and a training function — it discovers the tunable parameters, asks the LLM for reasonable search ranges, and optimizes.</p>
-<h2 id="quickstart">Quickstart</h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># train.py</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.datasets</span><span class="w"> </span><span class="kn">import</span> <span class="n">load_breast_cancer</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.model_selection</span><span class="w"> </span><span class="kn">import</span> <span class="n">train_test_split</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">xgboost</span><span class="w"> </span><span class="kn">import</span> <span class="n">XGBClassifier</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">X</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">load_breast_cancer</span><span class="p">(</span><span class="n">return_X_y</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">X_train</span><span class="p">,</span> <span class="n">X_val</span><span class="p">,</span> <span class="n">y_train</span><span class="p">,</span> <span class="n">y_val</span> <span class="o">=</span> <span class="n">train_test_split</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">test_size</span><span class="o">=</span><span class="mf">0.2</span><span class="p">,</span> <span class="n">random_state</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">model</span> <span class="o">=</span> <span class="n">XGBClassifier</span><span class="p">(</span><span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<h1 id="auto-model-introspection">Auto Model Introspection</h1>
+<p>With <code>ArchSearch.from_model()</code>, you don't specify any hyperparameters or search ranges — neuropt walks your model's module tree, discovers what's tunable, and builds a search space for you. This is <strong>Option 2</strong> in the quick start.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">neuropt</span><span class="w"> </span><span class="kn">import</span> <span class="n">ArchSearch</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">model</span> <span class="o">=</span> <span class="n">build_my_cnn</span><span class="p">()</span>  <span class="c1"># or load a pretrained model</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">train_fn</span><span class="p">(</span><span class="n">config</span><span class="p">):</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">m</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;model&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>  <span class="c1"># deep copy with modifications applied</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;lr&quot;</span><span class="p">])</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="c1"># ... train ...</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;score&quot;</span><span class="p">:</span> <span class="n">val_loss</span><span class="p">,</span> <span class="s2">&quot;train_losses&quot;</span><span class="p">:</span> <span class="p">[</span><span class="o">...</span><span class="p">],</span> <span class="s2">&quot;val_losses&quot;</span><span class="p">:</span> <span class="p">[</span><span class="o">...</span><span class="p">]}</span>
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="k">def</span><span class="w"> </span><span class="nf">train_fn</span><span class="p">(</span><span class="n">config</span><span class="p">):</span>
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">m</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;model&quot;</span><span class="p">]</span>
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="n">m</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X_train</span><span class="p">,</span> <span class="n">y_train</span><span class="p">,</span> <span class="n">eval_set</span><span class="o">=</span><span class="p">[(</span><span class="n">X_train</span><span class="p">,</span> <span class="n">y_train</span><span class="p">),</span> <span class="p">(</span><span class="n">X_val</span><span class="p">,</span> <span class="n">y_val</span><span class="p">)],</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    <span class="n">results</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">evals_result</span><span class="p">()</span>
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="k">return</span> <span class="p">{</span>
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>        <span class="s2">&quot;score&quot;</span><span class="p">:</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;validation_1&quot;</span><span class="p">][</span><span class="s2">&quot;logloss&quot;</span><span class="p">][</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>        <span class="s2">&quot;train_losses&quot;</span><span class="p">:</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;validation_0&quot;</span><span class="p">][</span><span class="s2">&quot;logloss&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>        <span class="s2">&quot;val_losses&quot;</span><span class="p">:</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;validation_1&quot;</span><span class="p">][</span><span class="s2">&quot;logloss&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    <span class="p">}</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="n">search</span> <span class="o">=</span> <span class="n">ArchSearch</span><span class="o">.</span><span class="n">from_model</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">train_fn</span><span class="p">,</span> <span class="n">backend</span><span class="o">=</span><span class="s2">&quot;claude&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="n">search</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">max_evals</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
 </code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>neuropt<span class="w"> </span>run<span class="w"> </span>train.py<span class="w"> </span>--backend<span class="w"> </span>claude<span class="w"> </span>-n<span class="w"> </span><span class="m">30</span>
+<p>neuropt prints what it found and what it will search over:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>Introspected PyTorch model (77,322 params):
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  Activations: ReLU, Mish (2 layers)
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  Dropout: 3 layers (rate=0.20)
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  BatchNorm: 4 layers
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  Pooling: 1 layers (current: avg)
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  Search space: [&#39;activation&#39;, &#39;dropout&#39;, &#39;use_batchnorm&#39;, &#39;pool_type&#39;,
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    &#39;lr&#39;, &#39;wd&#39;, &#39;optimizer&#39;]
 </code></pre></div>
-<p>That's it. neuropt calls <code>model.get_params()</code>, sees 20+ parameters, filters to the ones worth tuning, and asks the LLM for ranges. You don't need to know what <code>reg_alpha</code> or <code>colsample_bytree</code> should be.</p>
-<h2 id="what-happens-under-the-hood">What happens under the hood</h2>
+<p>Your original model is never modified — each experiment gets a deep copy with the LLM's proposed changes applied.</p>
+<h2 id="how-it-works">How it works</h2>
 <ol>
-<li><strong>Introspection</strong> — neuropt calls <code>get_params()</code> on your XGBClassifier and gets all parameters + current values</li>
-<li><strong>Range selection</strong> — the LLM is asked: "for an XGBClassifier, what are sensible search ranges for each parameter?" It returns ranges like <code>learning_rate: log_float [0.001, 0.3]</code> and <code>max_depth: int [3, 12]</code></li>
-<li><strong>Search loop</strong> — each iteration, the LLM reads the per-round loss curves and proposes new configs</li>
-<li><strong>Model cloning</strong> — each experiment gets a fresh <code>clone()</code> of your model with the new params applied via <code>set_params()</code></li>
+<li><strong>Walk the module tree</strong> — <code>model.named_modules()</code> finds every layer</li>
+<li><strong>Classify each module</strong> — activations, dropout, norms, pooling, etc.</li>
+<li><strong>Build a search space</strong> — each detected component becomes a tunable parameter</li>
+<li><strong>Wrap your train_fn</strong> — deep-copies the model, applies config, passes it as <code>config["model"]</code></li>
+<li><strong>Detect pretrained weights</strong> — if the model looks pretrained, add fine-tuning strategies (see <a href="../fine-tuning/">Fine-Tuning</a>)</li>
 </ol>
-<p>If the LLM backend isn't available, neuropt falls back to hardcoded ranges for common XGBoost/LightGBM/sklearn parameters.</p>
-<h2 id="what-the-llm-sees">What the LLM sees</h2>
-<p>XGBoost's <code>evals_result()</code> gives per-round train and validation loss — this maps directly to <code>train_losses</code> and <code>val_losses</code>. The LLM can see patterns like:</p>
-<ul>
-<li><strong>Overfitting</strong>: train loss keeps dropping but val loss flattens or rises → needs more regularization (<code>reg_alpha</code>, <code>reg_lambda</code>, lower <code>max_depth</code>)</li>
-<li><strong>Underfitting</strong>: both losses plateau high → less regularization, more <code>n_estimators</code>, higher <code>learning_rate</code></li>
-<li><strong>Early convergence</strong>: val loss stops improving after 50 rounds but <code>n_estimators=500</code> → wasting compute</li>
-</ul>
-<h2 id="parameters-typically-searched">Parameters typically searched</h2>
-<p>When you pass an <code>XGBClassifier</code>, neuropt will typically search over:</p>
+<p>The LLM gets context about what was detected ("4 BatchNorm layers", "attention and FF dropout found separately") and domain-specific guidance so it can reason about <em>why</em> to try a change, not just guess.</p>
+<h2 id="what-gets-detected">What gets detected</h2>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>What it controls</th>
+<th>Component</th>
+<th>What neuropt finds</th>
+<th>Search param</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>learning_rate</code></td>
-<td>Step size shrinkage (log scale, 0.001–0.3)</td>
+<td>Activations</td>
+<td><code>ReLU</code>, <code>GELU</code>, <code>SiLU</code>, <code>Mish</code>, <code>Hardswish</code>, <code>PReLU</code>, <code>LeakyReLU</code></td>
+<td><code>activation</code> (7-way swap)</td>
 </tr>
 <tr>
-<td><code>max_depth</code></td>
-<td>Tree depth (3–12)</td>
+<td>Dropout</td>
+<td><code>Dropout</code>, <code>Dropout1d/2d/3d</code>, <code>AlphaDropout</code>, <code>FeatureAlphaDropout</code></td>
+<td><code>dropout</code> (rate)</td>
 </tr>
 <tr>
-<td><code>n_estimators</code></td>
-<td>Number of boosting rounds (50–500)</td>
+<td>MHA dropout</td>
+<td><code>MultiheadAttention</code> internal <code>.dropout</code> float</td>
+<td><code>mha_dropout</code> (rate)</td>
 </tr>
 <tr>
-<td><code>min_child_weight</code></td>
-<td>Minimum leaf weight (1–10)</td>
+<td>Per-path dropout</td>
+<td>Groups by path name (<code>attn</code>, <code>ff</code>, <code>mlp</code>, <code>embed</code>)</td>
+<td><code>dropout_attn</code>, <code>dropout_ff</code>, etc.</td>
 </tr>
 <tr>
-<td><code>subsample</code></td>
-<td>Row sampling ratio (0.5–1.0)</td>
+<td>BatchNorm</td>
+<td><code>BatchNorm1d/2d/3d</code></td>
+<td><code>use_batchnorm</code> (on/off)</td>
 </tr>
 <tr>
-<td><code>colsample_bytree</code></td>
-<td>Column sampling ratio (0.5–1.0)</td>
+<td>LayerNorm</td>
+<td><code>LayerNorm</code></td>
+<td><code>use_layernorm</code> (on/off)</td>
 </tr>
 <tr>
-<td><code>reg_alpha</code></td>
-<td>L1 regularization (log scale)</td>
+<td>Pooling</td>
+<td><code>AdaptiveAvgPool</code>, <code>AdaptiveMaxPool</code></td>
+<td><code>pool_type</code> (avg/max/attention)</td>
 </tr>
 <tr>
-<td><code>reg_lambda</code></td>
-<td>L2 regularization (log scale)</td>
-</tr>
-<tr>
-<td><code>gamma</code></td>
-<td>Min split loss (log scale)</td>
+<td>Training</td>
+<td>Always included</td>
+<td><code>lr</code>, <code>wd</code>, <code>optimizer</code></td>
 </tr>
 </tbody>
 </table>
-<p>Parameters like <code>random_state</code>, <code>n_jobs</code>, <code>verbosity</code>, and <code>objective</code> are automatically skipped.</p>
-<h2 id="works-with-other-sklearn-models-too">Works with other sklearn models too</h2>
-<p>The same <code>from_model</code> pattern works with LightGBM, RandomForest, GradientBoosting, and any estimator that has <code>get_params()</code> / <code>set_params()</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.ensemble</span><span class="w"> </span><span class="kn">import</span> <span class="n">RandomForestClassifier</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">model</span> <span class="o">=</span> <span class="n">RandomForestClassifier</span><span class="p">()</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">train_fn</span><span class="p">(</span><span class="n">config</span><span class="p">):</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="n">m</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;model&quot;</span><span class="p">]</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">m</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X_train</span><span class="p">,</span> <span class="n">y_train</span><span class="p">)</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">accuracy</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">score</span><span class="p">(</span><span class="n">X_val</span><span class="p">,</span> <span class="n">y_val</span><span class="p">)</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;score&quot;</span><span class="p">:</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">accuracy</span><span class="p">}</span>  <span class="c1"># lower is better</span>
-</code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>neuropt<span class="w"> </span>run<span class="w"> </span>train.py<span class="w"> </span>--backend<span class="w"> </span>claude
-</code></pre></div>
-<h2 id="notebook-usage">Notebook usage</h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">neuropt</span><span class="w"> </span><span class="kn">import</span> <span class="n">ArchSearch</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">xgboost</span><span class="w"> </span><span class="kn">import</span> <span class="n">XGBClassifier</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">model</span> <span class="o">=</span> <span class="n">XGBClassifier</span><span class="p">(</span><span class="n">verbosity</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">search</span> <span class="o">=</span> <span class="n">ArchSearch</span><span class="o">.</span><span class="n">from_model</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">train_fn</span><span class="p">,</span> <span class="n">backend</span><span class="o">=</span><span class="s2">&quot;claude&quot;</span><span class="p">)</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="n">search</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">max_evals</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="nb">print</span><span class="p">(</span><span class="n">search</span><span class="o">.</span><span class="n">best_score</span><span class="p">)</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="nb">print</span><span class="p">(</span><span class="n">search</span><span class="o">.</span><span class="n">best_config</span><span class="p">)</span>
-</code></pre></div>
+<p>If pretrained weights are detected, additional fine-tuning params are added — see <a href="../fine-tuning/">Fine-Tuning Pretrained Models</a>.</p>
+<h2 id="activations">Activations</h2>
+<p>All detected activation layers are swapped together. The 7 options:</p>
+<table>
+<thead>
+<tr>
+<th>Activation</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>relu</code></td>
+<td>Standard default</td>
+</tr>
+<tr>
+<td><code>gelu</code></td>
+<td>Common in transformers, often better than ReLU</td>
+</tr>
+<tr>
+<td><code>silu</code></td>
+<td>Smooth, used in EfficientNet and modern CNNs</td>
+</tr>
+<tr>
+<td><code>mish</code></td>
+<td>Competitive with SiLU, used in YOLOv4/v5</td>
+</tr>
+<tr>
+<td><code>hardswish</code></td>
+<td>Cheaper SiLU approximation, good for mobile/edge</td>
+</tr>
+<tr>
+<td><code>leaky_relu</code></td>
+<td>Avoids dead neurons</td>
+</tr>
+<tr>
+<td><code>prelu</code></td>
+<td>Learnable negative slope (adds a small number of parameters)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="dropout">Dropout</h2>
+<p>neuropt detects all PyTorch dropout variants — <code>Dropout</code>, <code>Dropout1d</code>, <code>Dropout2d</code>, <code>Dropout3d</code>, <code>AlphaDropout</code>, and <code>FeatureAlphaDropout</code>. The rate is tuned as a single <code>dropout</code> param.</p>
+<p><strong>Per-path dropout</strong> — for transformers with dropout in distinct paths, neuropt groups by module path name and emits separate params so the LLM can tune attention and feedforward dropout independently:</p>
+<ul>
+<li>Path contains <code>attn</code>/<code>attention</code> → <code>dropout_attn</code></li>
+<li>Path contains <code>ff</code>/<code>ffn</code>/<code>mlp</code> → <code>dropout_ff</code></li>
+<li>Path contains <code>embed</code> → <code>dropout_embed</code></li>
+<li>Falls back to single <code>dropout</code> if only one group exists</li>
+</ul>
+<p><strong>MHA internal dropout</strong> — <code>nn.MultiheadAttention</code> stores dropout as a plain float attribute, not a module. neuropt catches this and adds <code>mha_dropout</code> as a separate search param.</p>
+<h2 id="normalization">Normalization</h2>
+<p>BatchNorm and LayerNorm can each be toggled off (replaced with <code>nn.Identity()</code>).</p>
+<ul>
+<li><strong>BatchNorm off</strong> — sometimes helps very small models or when batch sizes vary widely</li>
+<li><strong>LayerNorm off</strong> — rarely helpful in transformers, but the LLM can test it</li>
+</ul>
+<h2 id="pooling">Pooling</h2>
+<p>When <code>AdaptiveAvgPool</code> or <code>AdaptiveMaxPool</code> layers are found, neuropt adds a three-way swap:</p>
+<table>
+<thead>
+<tr>
+<th>Pool type</th>
+<th>How it works</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>avg</code></td>
+<td>Average over all spatial positions (standard default)</td>
+</tr>
+<tr>
+<td><code>max</code></td>
+<td>Keep the strongest activation per channel</td>
+</tr>
+<tr>
+<td><code>attention</code></td>
+<td>Learned weighted average — a small linear projection computes attention weights over spatial positions (~C extra params)</td>
+</tr>
+</tbody>
+</table>
+<p>Attention pooling is useful when not all spatial positions are equally important for the task — it learns where to look.</p>
 
 
 

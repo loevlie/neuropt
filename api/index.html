@@ -16,7 +16,7 @@
         <link rel="prev" href="../cli/">
       
       
-        <link rel="next" href="../xgboost/">
+        <link rel="next" href="../introspection/">
       
       
         
@@ -523,6 +523,60 @@
   
   
     <li class="md-nav__item">
+      <a href="../introspection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Introspection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fine-tuning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fine-Tuning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../xgboost/" class="md-nav__link">
         
   
@@ -796,7 +850,10 @@
 <a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="p">)</span>
 <a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="n">search</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">max_evals</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
 </code></pre></div>
-<p><code>from_model</code> introspects the module tree, finds activations/dropout/batch norm, generates a search space, and wraps your <code>train_fn</code> so <code>config["model"]</code> contains the modified deep copy.</p>
+<p><code>from_model</code> introspects the module tree — activations, dropout, norms, pooling — and generates a search space automatically. See <a href="../introspection/">Model Introspection</a> for the full detection list. For pretrained models, it also adds freeze strategies, LR decay, and L2-SP — see <a href="../fine-tuning/">Fine-Tuning</a>.</p>
+<p>Pass <code>pretrained=True</code> or <code>pretrained=False</code> to override auto-detection:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">search</span> <span class="o">=</span> <span class="n">ArchSearch</span><span class="o">.</span><span class="n">from_model</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">train_fn</span><span class="p">,</span> <span class="n">pretrained</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
 <h3 id="parameters">Parameters</h3>
 <table>
 <thead>
@@ -847,6 +904,11 @@
 <td>generic</td>
 <td>Domain knowledge for the LLM</td>
 </tr>
+<tr>
+<td><code>minimize</code></td>
+<td><code>True</code></td>
+<td>If <code>True</code>, lower scores are better (loss). Set <code>False</code> for accuracy/AUROC</td>
+</tr>
 </tbody>
 </table>
 <h3 id="runmax_evalsnone"><code>run(max_evals=None)</code></h3>
@@ -865,7 +927,7 @@
 <p>Your function receives a config dict and returns a result dict.</p>
 <p><strong>Required return key:</strong></p>
 <ul>
-<li><code>"score"</code> — float, lower is better</li>
+<li><code>"score"</code> — float, lower is better by default (set <code>minimize=False</code> for accuracy/AUROC)</li>
 </ul>
 <p><strong>Optional return keys (recommended):</strong></p>
 <ul>
@@ -879,27 +941,27 @@
 <h2 id="search-space-types">Search space types</h2>
 <p>You can use plain Python types (auto-inferred) or explicit dimension objects.</p>
 <h3 id="auto-inference-from-tuples-and-lists">Auto-inference from tuples and lists</h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">search_space</span> <span class="o">=</span> <span class="p">{</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="s2">&quot;lr&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">1e-4</span><span class="p">,</span> <span class="mf">1e-1</span><span class="p">),</span>              <span class="c1"># → LogUniform (name-based)</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="s2">&quot;wd&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">1e-6</span><span class="p">,</span> <span class="mf">1e-2</span><span class="p">),</span>              <span class="c1"># → LogUniform (name-based)</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="s2">&quot;dropout&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span>           <span class="c1"># → Uniform</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="s2">&quot;n_layers&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">8</span><span class="p">),</span>              <span class="c1"># → IntUniform (name + int values)</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="s2">&quot;hidden_dim&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">512</span><span class="p">),</span>          <span class="c1"># → IntUniform (name + int values)</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="s2">&quot;activation&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;relu&quot;</span><span class="p">,</span> <span class="s2">&quot;gelu&quot;</span><span class="p">],</span>   <span class="c1"># → Categorical</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="s2">&quot;use_bn&quot;</span><span class="p">:</span> <span class="p">[</span><span class="kc">True</span><span class="p">,</span> <span class="kc">False</span><span class="p">],</span>          <span class="c1"># → Categorical</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">search_space</span> <span class="o">=</span> <span class="p">{</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="s2">&quot;lr&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">1e-4</span><span class="p">,</span> <span class="mf">1e-1</span><span class="p">),</span>              <span class="c1"># → LogUniform (name-based)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="s2">&quot;wd&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">1e-6</span><span class="p">,</span> <span class="mf">1e-2</span><span class="p">),</span>              <span class="c1"># → LogUniform (name-based)</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="s2">&quot;dropout&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">),</span>           <span class="c1"># → Uniform</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="s2">&quot;n_layers&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">8</span><span class="p">),</span>              <span class="c1"># → IntUniform (name + int values)</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="s2">&quot;hidden_dim&quot;</span><span class="p">:</span> <span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">512</span><span class="p">),</span>          <span class="c1"># → IntUniform (name + int values)</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="s2">&quot;activation&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;relu&quot;</span><span class="p">,</span> <span class="s2">&quot;gelu&quot;</span><span class="p">],</span>   <span class="c1"># → Categorical</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>    <span class="s2">&quot;use_bn&quot;</span><span class="p">:</span> <span class="p">[</span><span class="kc">True</span><span class="p">,</span> <span class="kc">False</span><span class="p">],</span>          <span class="c1"># → Categorical</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="p">}</span>
 </code></pre></div>
 <p>Names like <code>lr</code>, <code>learning_rate</code>, <code>wd</code>, <code>weight_decay</code> automatically get log-scale sampling. Names like <code>n_layers</code>, <code>hidden_dim</code>, <code>num_heads</code> get integer sampling. Integer tuple values also trigger IntUniform.</p>
 <h3 id="explicit-dimension-objects">Explicit dimension objects</h3>
 <p>For full control over ranges and sampling:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">neuropt</span><span class="w"> </span><span class="kn">import</span> <span class="n">LogUniform</span><span class="p">,</span> <span class="n">Uniform</span><span class="p">,</span> <span class="n">IntUniform</span><span class="p">,</span> <span class="n">Categorical</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">search_space</span> <span class="o">=</span> <span class="p">{</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="s2">&quot;lr&quot;</span><span class="p">:</span> <span class="n">LogUniform</span><span class="p">(</span><span class="mf">1e-4</span><span class="p">,</span> <span class="mf">1e-1</span><span class="p">),</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    <span class="s2">&quot;momentum&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="mf">0.8</span><span class="p">,</span> <span class="mf">0.99</span><span class="p">),</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="s2">&quot;depth&quot;</span><span class="p">:</span> <span class="n">IntUniform</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">8</span><span class="p">),</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="s2">&quot;optimizer&quot;</span><span class="p">:</span> <span class="n">Categorical</span><span class="p">([</span><span class="s2">&quot;sgd&quot;</span><span class="p">,</span> <span class="s2">&quot;adam&quot;</span><span class="p">,</span> <span class="s2">&quot;adamw&quot;</span><span class="p">]),</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">neuropt</span><span class="w"> </span><span class="kn">import</span> <span class="n">LogUniform</span><span class="p">,</span> <span class="n">Uniform</span><span class="p">,</span> <span class="n">IntUniform</span><span class="p">,</span> <span class="n">Categorical</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">search_space</span> <span class="o">=</span> <span class="p">{</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="s2">&quot;lr&quot;</span><span class="p">:</span> <span class="n">LogUniform</span><span class="p">(</span><span class="mf">1e-4</span><span class="p">,</span> <span class="mf">1e-1</span><span class="p">),</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    <span class="s2">&quot;momentum&quot;</span><span class="p">:</span> <span class="n">Uniform</span><span class="p">(</span><span class="mf">0.8</span><span class="p">,</span> <span class="mf">0.99</span><span class="p">),</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="s2">&quot;depth&quot;</span><span class="p">:</span> <span class="n">IntUniform</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">8</span><span class="p">),</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="s2">&quot;optimizer&quot;</span><span class="p">:</span> <span class="n">Categorical</span><span class="p">([</span><span class="s2">&quot;sgd&quot;</span><span class="p">,</span> <span class="s2">&quot;adam&quot;</span><span class="p">,</span> <span class="s2">&quot;adamw&quot;</span><span class="p">]),</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="p">}</span>
 </code></pre></div>
 
 

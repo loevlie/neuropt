@@ -460,6 +460,60 @@
   
   
     <li class="md-nav__item">
+      <a href="introspection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Introspection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="fine-tuning/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fine-Tuning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="xgboost/" class="md-nav__link">
         
   
@@ -674,7 +728,7 @@
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="c1"># ... train ...</span>
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;score&quot;</span><span class="p">:</span> <span class="n">val_loss</span><span class="p">,</span> <span class="s2">&quot;train_losses&quot;</span><span class="p">:</span> <span class="p">[</span><span class="o">...</span><span class="p">],</span> <span class="s2">&quot;val_losses&quot;</span><span class="p">:</span> <span class="p">[</span><span class="o">...</span><span class="p">]}</span>
 </code></pre></div>
-<p>neuropt walks the module tree, finds activations/dropout/batch norm, and generates a search space automatically. Your model is deep-copied each experiment — the original is never touched.</p>
+<p>neuropt <a href="introspection/">walks the module tree</a> — activations, dropout, norms, pooling — and generates a search space automatically. For pretrained models, it also adds <a href="fine-tuning/">fine-tuning strategies</a> (freeze strategies, LR decay, L2-SP). Your model is deep-copied each experiment — the original is never touched.</p>
 <h3 id="run-it">Run it</h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>neuropt<span class="w"> </span>run<span class="w"> </span>train.py
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>neuropt<span class="w"> </span>run<span class="w"> </span>train.py<span class="w"> </span>--backend<span class="w"> </span>claude<span class="w"> </span>-n<span class="w"> </span><span class="m">50</span><span class="w">  </span><span class="c1"># stop after 50 experiments</span>
