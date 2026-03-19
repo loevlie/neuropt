@@ -1032,7 +1032,11 @@
 
 
 <h1 id="auto-model-introspection">Auto Model Introspection</h1>
-<p>With <code>ArchSearch.from_model()</code>, you don't specify any hyperparameters or search ranges — neuropt walks your model's module tree, discovers what's tunable, and builds a search space for you. This is <strong>Option 2</strong> in the quick start.</p>
+<div class="admonition note">
+<p class="admonition-title">This is all under the hood</p>
+<p>You don't need to understand any of this to use neuropt. Just call <code>ArchSearch.from_model(model, train_fn)</code> and it handles everything. This page is for people who want to know what's happening inside.</p>
+</div>
+<p>With <code>ArchSearch.from_model()</code>, you don't specify any hyperparameters or search ranges — neuropt walks your model's module tree, discovers what's tunable, and builds a search space for you.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">neuropt</span><span class="w"> </span><span class="kn">import</span> <span class="n">ArchSearch</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">model</span> <span class="o">=</span> <span class="n">build_my_cnn</span><span class="p">()</span>  <span class="c1"># or load a pretrained model</span>

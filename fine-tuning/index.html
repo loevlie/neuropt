@@ -1088,6 +1088,10 @@
 
 
 <h1 id="fine-tuning-pretrained-models">Fine-Tuning Pretrained Models</h1>
+<div class="admonition note">
+<p class="admonition-title">This is all under the hood</p>
+<p>neuropt handles fine-tuning detection and strategy selection automatically. Just pass a pretrained model to <code>from_model()</code> — no configuration needed. This page explains what's happening inside.</p>
+</div>
 <p>When <code>from_model()</code> detects pretrained weights, it adds fine-tuning strategies to the search space alongside the standard <a href="../introspection/">introspection params</a>. The LLM uses domain knowledge about what works for fine-tuning — freeze strategies, learning rate decay, regularization toward pretrained weights — and decides what to try based on your training curves.</p>
 <h2 id="quick-start">Quick start</h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torchvision</span>
