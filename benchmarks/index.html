@@ -439,46 +439,63 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#setup" class="md-nav__link">
+  <a href="#15-eval-benchmark-14-parameter-cnn-search" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Setup
+        15-eval benchmark (14-parameter CNN search)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="15-eval benchmark (14-parameter CNN search)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#convergence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Convergence
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#run-the-benchmark-yourself" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#what-went-wrong-with-the-other-methods" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Run the benchmark yourself
+        What went wrong with the other methods
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#why-this-space-favors-llm-search" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#why-claude-wins-on-this-search-space" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Why this space favors LLM search
+        Why Claude wins on this search space
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#claude-vs-qwen" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#run-it-yourself" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Claude vs Qwen
+        Run it yourself
       
     </span>
   </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -517,46 +534,63 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#setup" class="md-nav__link">
+  <a href="#15-eval-benchmark-14-parameter-cnn-search" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Setup
+        15-eval benchmark (14-parameter CNN search)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="15-eval benchmark (14-parameter CNN search)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#convergence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Convergence
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#run-the-benchmark-yourself" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#what-went-wrong-with-the-other-methods" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Run the benchmark yourself
+        What went wrong with the other methods
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#why-this-space-favors-llm-search" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#why-claude-wins-on-this-search-space" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Why this space favors LLM search
+        Why Claude wins on this search space
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#claude-vs-qwen" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#run-it-yourself" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Claude vs Qwen
+        Run it yourself
       
     </span>
   </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -581,112 +615,102 @@
 
 
 <h1 id="benchmarks">Benchmarks</h1>
-<h2 id="setup">Setup</h2>
-<p>All methods get the <strong>exact same evaluation budget</strong> on the <strong>same 14-parameter CNN search space</strong>. This is a large, mixed search space with complex interactions — the kind where domain knowledge matters.</p>
+<h2 id="15-eval-benchmark-14-parameter-cnn-search">15-eval benchmark (14-parameter CNN search)</h2>
+<p>All methods get exactly 15 evaluations on the same search space. FashionMNIST, 5 epochs per eval, M1 MacBook.</p>
+<p><img alt="Benchmark results" src="../assets/benchmark.png" /></p>
 <table>
 <thead>
 <tr>
-<th>Parameter</th>
-<th>Type</th>
-<th>Range</th>
+<th>Method</th>
+<th>Best Loss</th>
+<th>Best Acc</th>
+<th>LLM Fallbacks</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>n_blocks</td>
-<td>int</td>
-<td>2–8</td>
+<td><strong>LLM (Claude)</strong></td>
+<td><strong>0.385</strong></td>
+<td><strong>85.4%</strong></td>
+<td>0/5</td>
 </tr>
 <tr>
-<td>base_channels</td>
-<td>int</td>
-<td>16–128</td>
-</tr>
-<tr>
-<td>channel_growth</td>
-<td>float</td>
-<td>1.0–2.5</td>
-</tr>
-<tr>
-<td>kernel_size</td>
-<td>choice</td>
-<td>3, 5</td>
-</tr>
-<tr>
-<td>activation</td>
-<td>choice</td>
-<td>relu, gelu, leaky_relu, silu</td>
-</tr>
-<tr>
-<td>use_residual</td>
-<td>bool</td>
+<td>Optuna TPE</td>
+<td>0.454</td>
+<td>82.7%</td>
 <td>—</td>
 </tr>
 <tr>
-<td>use_batchnorm</td>
-<td>bool</td>
+<td>Random Search</td>
+<td>0.610</td>
+<td>76.7%</td>
 <td>—</td>
 </tr>
 <tr>
-<td>dropout</td>
-<td>float</td>
-<td>0.0–0.5</td>
-</tr>
-<tr>
-<td>pool_every</td>
-<td>int</td>
-<td>1–4</td>
-</tr>
-<tr>
-<td>pool_type</td>
-<td>choice</td>
-<td>max, avg</td>
-</tr>
-<tr>
-<td>fc_hidden</td>
-<td>int</td>
-<td>0–512</td>
-</tr>
-<tr>
-<td>lr</td>
-<td>log float</td>
-<td>1e-4 to 0.1</td>
-</tr>
-<tr>
-<td>wd</td>
-<td>log float</td>
-<td>1e-6 to 0.01</td>
-</tr>
-<tr>
-<td>optimizer</td>
-<td>choice</td>
-<td>sgd, adam, adamw</td>
+<td>LLM (Qwen local)</td>
+<td>0.637</td>
+<td>75.0%</td>
+<td>2/5</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Task:</strong> FashionMNIST (5k subset, 10 epochs per eval, ResNet-style CNN)</p>
-<p>Grid search can't participate here — even 2 values per parameter gives 2^14 = 16,384 combinations, far exceeding any reasonable budget.</p>
-<h2 id="run-the-benchmark-yourself">Run the benchmark yourself</h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>python<span class="w"> </span>examples/benchmark.py<span class="w"> </span>--n-evals<span class="w"> </span><span class="m">30</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>python<span class="w"> </span>examples/benchmark.py<span class="w"> </span>--n-evals<span class="w"> </span><span class="m">30</span><span class="w"> </span>--skip-qwen<span class="w">  </span><span class="c1"># skip local model</span>
+<h3 id="convergence">Convergence</h3>
+<table>
+<thead>
+<tr>
+<th>Eval</th>
+<th>LLM (Claude)</th>
+<th>Optuna TPE</th>
+<th>Random</th>
+<th>LLM (Qwen)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>5</td>
+<td><strong>0.401</strong></td>
+<td>0.612</td>
+<td>0.655</td>
+<td>0.748</td>
+</tr>
+<tr>
+<td>10</td>
+<td><strong>0.399</strong></td>
+<td>0.454</td>
+<td>0.655</td>
+<td>0.637</td>
+</tr>
+<tr>
+<td>15</td>
+<td><strong>0.385</strong></td>
+<td>0.454</td>
+<td>0.610</td>
+<td>0.637</td>
+</tr>
+</tbody>
+</table>
+<p>Claude was ahead of Optuna from eval 5 onward — it started with good architectural priors (residual connections, AdamW, reasonable LR) instead of discovering them through trial and error.</p>
+<h3 id="what-went-wrong-with-the-other-methods">What went wrong with the other methods</h3>
+<p><strong>Optuna TPE</strong> — 7 out of 15 evals scored above 1.0 (worse than random chance). With 14 parameters, TPE's surrogate model needs many more samples before it becomes useful. It found one good config at eval 8 but couldn't build on it.</p>
+<p><strong>Random search</strong> — Actually outperformed Qwen, which says more about Qwen's parse failures than random's quality. Random got lucky with a few configs but has no mechanism to improve.</p>
+<p><strong>LLM (Qwen local)</strong> — Failed to produce valid JSON on 2 of 5 iterations (40% fallback rate). When it did generate configs, they were reasonable but not as focused as Claude's. The local Qwen backend is experimental — it works for simpler search spaces but struggles with 14-key JSON output.</p>
+<h3 id="why-claude-wins-on-this-search-space">Why Claude wins on this search space</h3>
+<p>With 14 parameters including categorical choices (activation, optimizer, pool type, residual on/off), the search space has complex interactions:</p>
+<ul>
+<li>High LR + no batch norm = training instability</li>
+<li>Deep networks + no residual = vanishing gradients</li>
+<li>Dropout + small dataset subset = unnecessary regularization</li>
+</ul>
+<p>Claude starts with knowledge of these interactions. Optuna has to discover each one empirically, burning evals on configurations that any ML practitioner would avoid.</p>
+<h3 id="run-it-yourself">Run it yourself</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span>swarmopt<span class="o">[</span>llm<span class="o">]</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span><span class="s2">&quot;sk-ant-...&quot;</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>python<span class="w"> </span>examples/benchmark.py
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>python<span class="w"> </span>examples/benchmark.py<span class="w"> </span>--n-evals<span class="w"> </span><span class="m">30</span><span class="w">          </span><span class="c1"># longer run</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>python<span class="w"> </span>examples/benchmark.py<span class="w"> </span>--skip-qwen<span class="w">           </span><span class="c1"># skip local model</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>python<span class="w"> </span>examples/benchmark.py<span class="w"> </span>--skip-qwen<span class="w"> </span>--n-evals<span class="w"> </span><span class="m">50</span><span class="w">  </span><span class="c1"># thorough comparison</span>
 </code></pre></div>
-<h2 id="why-this-space-favors-llm-search">Why this space favors LLM search</h2>
-<p>With 14 parameters, random search and Optuna TPE are essentially exploring blind. TPE builds a surrogate model from <code>(config, score)</code> pairs, but with 14 dimensions it needs many samples before the surrogate is useful.</p>
-<p>The LLM starts with prior knowledge:</p>
-<ul>
-<li><em>"GELU generally outperforms ReLU"</em> — immediately focuses on better activations</li>
-<li><em>"Dropout hurts if the model is underfitting"</em> — reads the training curves to decide</li>
-<li><em>"Residual connections help past 4-5 blocks"</em> — knows the interaction between depth and skip connections</li>
-<li><em>"AdamW with lr ~1e-3 is a safe starting point"</em> — doesn't waste evals on lr=0.08 with Adam</li>
-</ul>
-<p>Optuna would eventually learn these patterns from data, but in 30 evals it barely has enough signal.</p>
-<h2 id="claude-vs-qwen">Claude vs Qwen</h2>
-<p>The benchmark also compares Claude API (Haiku) against a local Qwen 2.5 1.5B model running on CPU:</p>
-<ul>
-<li><strong>Claude</strong>: faster responses (~1s), stronger reasoning, costs ~$0.01 per 30-eval run</li>
-<li><strong>Qwen</strong>: free, offline, ~3s per call, but weaker at complex JSON generation and may fall back to random more often</li>
-</ul>
-<p>Both should outperform Optuna and random on this search space, with Claude likely producing more consistent results due to stronger instruction following.</p>
 
 
 
