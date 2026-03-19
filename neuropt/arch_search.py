@@ -325,7 +325,9 @@ class ArchSearch:
 
                 if configs is None:
                     self.llm_fallback += 1
-                    print(f"  [LLM parse failed, using random]")
+                    # Show first 200 chars of response for debugging
+                    snippet = response[:200].replace('\n', ' ') if response else "(empty)"
+                    print(f"  [LLM parse failed, using random] response preview: {snippet}")
                     break
 
                 # Check for duplicates against history
