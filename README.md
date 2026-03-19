@@ -18,7 +18,7 @@ Point it at a training script, let it run overnight. The LLM sees full per-epoch
   <img src="assets/benchmark.png" alt="Benchmark: neuropt vs Optuna vs Random" width="700">
 </p>
 
-Same 15-eval budget, 14-parameter CNN search space. These results use **Claude Haiku 4.5** (the smallest and cheapest of their 4.5 models). We expect even stronger results with Sonnet or Opus. Optuna's TPE was configured with `n_startup_trials=3` for a fair comparison (default is 10, which would make it purely random for most of the budget).
+Same 15-eval budget on two tasks: CNN architecture search (14 params) and XGBoost tuning (9 params, 7-class Covertype). These results use **Claude Haiku 4.5** (the smallest and cheapest of their 4.5 models). We expect even stronger results with Sonnet or Opus. Optuna's TPE was configured with `n_startup_trials=3` for a fair comparison (default is 10, which would make it purely random for most of the budget).
 
 ## Quick start
 
