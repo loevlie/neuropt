@@ -177,6 +177,7 @@ def run_llm_search(backend_name, n_evals, train_loader, val_loader):
         backend=backend_name,
         log_path=log_path,
         batch_size=3,
+        timeout=60,
     )
     t0 = time.time()
     search.run(max_evals=n_evals)
