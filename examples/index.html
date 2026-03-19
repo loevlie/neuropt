@@ -13,10 +13,10 @@
         <link rel="canonical" href="https://loevlie.github.io/neuropt/examples/">
       
       
-        <link rel="prev" href="../xgboost/">
+        <link rel="prev" href="../fine-tuning/">
       
       
-        <link rel="next" href="../benchmarks/">
+        <link rel="next" href="../xgboost/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Examples - neuropt</title>
+        <title>PyTorch - neuropt</title>
       
     
     
@@ -113,7 +113,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Examples
+              PyTorch
             
           </span>
         </div>
@@ -289,11 +289,11 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="../xgboost/" class="md-tabs__link">
+        <a href="./" class="md-tabs__link">
           
   
   
-  Use Cases
+  Examples
 
         </a>
       </li>
@@ -693,7 +693,7 @@
   <span class="md-ellipsis">
     
   
-    Use Cases
+    Examples
   
 
     
@@ -709,39 +709,11 @@
             <span class="md-nav__icon md-icon"></span>
             
   
-    Use Cases
+    Examples
   
 
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../xgboost/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Tuning XGBoost
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
             
               
                 
@@ -766,7 +738,7 @@
   <span class="md-ellipsis">
     
   
-    Examples
+    PyTorch
   
 
     
@@ -784,7 +756,7 @@
   <span class="md-ellipsis">
     
   
-    Examples
+    PyTorch
   
 
     
@@ -854,10 +826,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#overnight-results" class="md-nav__link">
+  <a href="#longer-experiments" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overnight results
+        Longer experiments
       
     </span>
   </a>
@@ -868,6 +840,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../xgboost/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    XGBoost & sklearn
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -979,10 +979,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#overnight-results" class="md-nav__link">
+  <a href="#longer-experiments" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overnight results
+        Longer experiments
       
     </span>
   </a>
@@ -1047,16 +1047,9 @@
 <a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="nb">print</span><span class="p">(</span><span class="n">search</span><span class="o">.</span><span class="n">best_score</span><span class="p">)</span>
 </code></pre></div>
 <p>Crash-safe and resumable — if the kernel dies, restart and call <code>search.run()</code> again. It picks up from the JSONL log.</p>
-<h2 id="overnight-results">Overnight results</h2>
-<p>We ran <code>train_fashion.py</code> for 8 hours on an M1 MacBook with the Claude backend (Haiku). The LLM:</p>
-<ul>
-<li>Started from completely random architectures</li>
-<li>Tried SiLU first, then settled on GELU after seeing faster early-epoch convergence</li>
-<li>Progressively reduced dropout from 0.15 → 0.08 → 0.01 → 0.0 as it noticed the train-val gap was already small</li>
-<li>Locked in on AdamW with lr ~8.8e-4 after seeing higher LRs cause oscillation</li>
-<li>All top 10 final configs converged on the same pattern: 7 blocks, ~26 base channels, GELU, residual, BatchNorm, no dropout, AdamW</li>
-</ul>
-<p>The key insight: the LLM made the same decisions a human researcher would, but it ran 1,239 experiments to get there instead of a handful.</p>
+<h2 id="longer-experiments">Longer experiments</h2>
+<p>Let it run for 200+ evals and watch the LLM converge. Here's a 200-eval run on the CNN architecture search — neuropt keeps improving well beyond where Optuna and random search plateau:</p>
+<p><img src="assets/convergence_animated.gif" alt="200-eval convergence animation" style="max-width: 700px; width: 100%; border-radius: 8px;"></p>
 
 
 
