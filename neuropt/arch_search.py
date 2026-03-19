@@ -243,6 +243,7 @@ class ArchSearch:
         print("=" * 60)
         print()
         evals_at_start = self.total_experiments
+        self._max_evals = max_evals
 
         rng = random.Random(42 + self.total_experiments)
 
@@ -301,8 +302,10 @@ class ArchSearch:
             if self._shutdown:
                 break
 
-            # Ask LLM for insights to remember
-            if self._backend and source == "llm":
+            # Extract insights only when experiments are about to scroll
+            # out of the 20-experiment prompt window
+            if (self._backend and source == "llm"
+                    and len(history) > 20 and len(history) % 20 == 0):
                 self._extract_insights(history)
 
             print(f"  iter {iteration} done in {time.time() - iter_start:.1f}s | "
@@ -580,17 +583,38 @@ class ArchSearch:
                 parts.extend(signals)
                 parts.append("")
 
-        # Task
+        # Task — budget-aware exploration/exploitation
         parts.append(f"## Task\n")
+
+        budget_hint = ""
+        if self._max_evals and self.total_experiments > 0:
+            progress = self.total_experiments / self._max_evals
+            remaining = self._max_evals - self.total_experiments
+            if progress < 0.4:
+                budget_hint = (
+                    f"You are {self.total_experiments}/{self._max_evals} evals in "
+                    f"(early phase). EXPLORE broadly — try diverse configs to map "
+                    f"the search space. You have {remaining} evals left.\n"
+                )
+            elif progress < 0.75:
+                budget_hint = (
+                    f"You are {self.total_experiments}/{self._max_evals} evals in "
+                    f"(mid phase). Mix exploration with exploitation — refine what "
+                    f"works but still try 1 different approach per batch.\n"
+                )
+            else:
+                budget_hint = (
+                    f"You are {self.total_experiments}/{self._max_evals} evals in "
+                    f"(final phase, {remaining} left). EXPLOIT — focus on fine-tuning "
+                    f"the best config. Small, targeted changes to lr, wd, dropout.\n"
+                )
+
         parts.append(
             f"Propose exactly {self.batch_size} configs to try next.\n\n"
-            "Rules:\n"
+            + (budget_hint + "\n" if budget_hint else "")
+            + "Rules:\n"
             "- Every config must be DIFFERENT from the history AND from each other\n"
-            "- At least 1 config should explore something new (different activation, "
-            "architecture size, optimizer, or a parameter you haven't varied recently)\n"
-            "- Don't just repeat the best config with tiny tweaks — try to find a "
-            "meaningfully better design\n"
-            "- If the best configs are clustering, try something outside that cluster\n\n"
+            "- Don't just repeat the best config with tiny tweaks\n\n"
             "Respond with ONLY a JSON array of config objects. "
             "No explanation, no markdown fences."
         )
@@ -634,37 +658,44 @@ class ArchSearch:
             json.dump(self._insights, f, indent=2)
 
     def _extract_insights(self, history):
-        """Ask the LLM if it learned anything important this iteration."""
+        """Ask the LLM to summarize what it learned from experiments that
+        are about to scroll out of the prompt window.
+
+        Only called when len(history) crosses a multiple of 20 — meaning
+        old experiments are being dropped and their lessons would be lost.
+        """
         try:
-            recent = history[-self.batch_size:]
-            if not recent:
+            # Show the experiments that are about to leave the window
+            leaving = history[-40:-20] if len(history) >= 40 else history[:len(history)-20]
+            if not leaving:
                 return
 
-            prompt = (
-                "You just ran these experiments:\n\n"
-            )
-            for row in recent:
+            prompt = "These experiments are about to leave your visible history:\n\n"
+            for row in leaving:
                 cfg = row.get("config", {})
                 vl = row.get("val_loss")
                 vl_s = f"{vl:.4f}" if vl is not None else "inf"
-                prompt += f"- {_short_config(cfg)} → loss={vl_s}\n"
+                status = row.get("status", "ok")
+                prompt += f"- {_short_config(cfg)} → loss={vl_s} [{status}]\n"
 
             if self._insights:
-                prompt += "\nYou already know:\n"
+                prompt += "\nYou already have these notes:\n"
                 for insight in self._insights:
                     prompt += f"- {insight}\n"
 
             prompt += (
-                "\nBased on ALL experiments so far, is there a critical insight "
-                "worth remembering for future iterations? Only respond if you "
-                "noticed something important (e.g., a parameter that always helps "
-                "or hurts, a range that always fails, an interaction between params).\n\n"
+                "\nBefore these experiments disappear from your context, extract "
+                "any critical patterns you'd want to remember. Only write down "
+                "things you're confident about based on multiple experiments — "
+                "not guesses from a single result.\n\n"
                 "Rules:\n"
-                "- Respond with 1-2 short bullet points, or NONE if nothing new\n"
-                "- Don't repeat insights you already know\n"
-                "- Be specific and actionable (e.g., 'dropout > 0.2 always hurts' "
-                "not 'dropout matters')\n"
-                "- Respond with ONLY the bullet points (starting with -) or the word NONE"
+                "- 1-3 short bullet points, or NONE if nothing worth saving\n"
+                "- Don't repeat what you already know\n"
+                "- Record SPECIFIC results: 'lr=0.05 with gelu scored 0.38, best so far' "
+                "not 'gelu works well'\n"
+                "- Record what DIDN'T work too: 'dropout > 0.3 hurt all 4 configs that tried it'\n"
+                "- Only save patterns you saw in multiple experiments\n"
+                "- Respond with ONLY the bullet points (starting with -) or NONE"
             )
 
             response = self._backend.generate(prompt, max_tokens=256)
