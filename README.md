@@ -12,21 +12,13 @@
 
 Point it at a training script, let it run overnight. The LLM sees full per-epoch train/val curves, spots overfitting, and proposes what to try next — like a research assistant who never sleeps and actually reads the loss plots.
 
-We let it run for 8 hours on a MacBook. Starting from random configs, it independently converged on GELU + residual connections + BatchNorm + AdamW + zero dropout — the same recipe a senior ML engineer would pick. It noticed dropout was hurting performance from the training curves and stopped using it. 1,239 experiments, zero human intervention.
+### vs Optuna and random search
 
 <p align="center">
-  <img src="assets/convergence.png" alt="LLM convergence: loss 0.72 → 0.26 over 858 experiments" width="750">
+  <img src="assets/benchmark.png" alt="Benchmark: swarmopt vs Optuna vs Random" width="700">
 </p>
 
-### vs Optuna and random search (same 15-eval budget)
-
-<p align="center">
-  <img src="assets/benchmark.png" alt="Benchmark: LLM vs Optuna vs Random" width="650">
-</p>
-
-14-parameter CNN search space on FashionMNIST. Optuna TPE wasted 7 of 15 evals on configs that scored worse than random chance. The LLM already knew to use residual connections, reasonable learning rates, and modern activations — it didn't need to learn that from scratch.
-
-> Local Qwen backend is experimental — works but has a ~40% JSON parse failure rate on complex search spaces. Claude API recommended.
+Same 15-eval budget, 14-parameter CNN search space. swarmopt starts ahead because the LLM already knows things like "residual connections help deep networks" and "high learning rates cause instability" — Optuna has to discover all of that from data. Note: Optuna's TPE was configured with `n_startup_trials=3` for a fair comparison (default is 10, which would make it purely random for most of the budget).
 
 ## Quick start
 
@@ -85,8 +77,8 @@ See the [full documentation](https://loevlie.github.io/swarmopt/) for:
 - [How it works](https://loevlie.github.io/swarmopt/how-it-works/) — what the LLM sees, training curve analysis
 - [CLI reference](https://loevlie.github.io/swarmopt/cli/) — `swarmopt run`, `inspect`, `results`
 - [Python API](https://loevlie.github.io/swarmopt/api/) — `ArchSearch`, `from_model`, search space types
-- [Examples](https://loevlie.github.io/swarmopt/examples/) — CNN search, ResNet tuning, overnight results
-- [Benchmarks](https://loevlie.github.io/swarmopt/benchmarks/) — vs Optuna, random search, grid search
+- [Examples](https://loevlie.github.io/swarmopt/examples/) — CNN search, ResNet tuning
+- [Benchmarks](https://loevlie.github.io/swarmopt/benchmarks/) — vs Optuna, random search
 
 ## Installation
 

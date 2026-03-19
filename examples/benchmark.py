@@ -227,7 +227,8 @@ def run_optuna(n_evals, train_loader, val_loader):
         print(f"  Optuna [{len(scores)}/{n_evals}] loss={result[0]:.4f} acc={result[1]:.4f} ({result[2]:.1f}s)")
         return result[0]
 
-    study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(seed=42))
+    study = optuna.create_study(direction="minimize",
+                                sampler=optuna.samplers.TPESampler(seed=42, n_startup_trials=3))
     t0 = time.time()
     study.optimize(objective, n_trials=n_evals)
     wall_time = time.time() - t0
