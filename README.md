@@ -18,6 +18,16 @@ We let it run for 8 hours on a MacBook. Starting from random configs, it indepen
   <img src="assets/convergence.png" alt="LLM convergence: loss 0.72 → 0.26 over 858 experiments" width="750">
 </p>
 
+### vs Optuna and random search (same 15-eval budget)
+
+<p align="center">
+  <img src="assets/benchmark.png" alt="Benchmark: LLM vs Optuna vs Random" width="650">
+</p>
+
+14-parameter CNN search space on FashionMNIST. Optuna TPE wasted 7 of 15 evals on configs that scored worse than random chance. The LLM already knew to use residual connections, reasonable learning rates, and modern activations — it didn't need to learn that from scratch.
+
+> Local Qwen backend is experimental — works but has a ~40% JSON parse failure rate on complex search spaces. Claude API recommended.
+
 ## Quick start
 
 ```bash

@@ -1,55 +1,54 @@
 # Benchmarks
 
-## Setup
+## 15-eval benchmark (14-parameter CNN search)
 
-All methods get the **exact same evaluation budget** on the **same 14-parameter CNN search space**. This is a large, mixed search space with complex interactions — the kind where domain knowledge matters.
+All methods get exactly 15 evaluations on the same search space. FashionMNIST, 5 epochs per eval, M1 MacBook.
 
-| Parameter | Type | Range |
-|-----------|------|-------|
-| n_blocks | int | 2–8 |
-| base_channels | int | 16–128 |
-| channel_growth | float | 1.0–2.5 |
-| kernel_size | choice | 3, 5 |
-| activation | choice | relu, gelu, leaky_relu, silu |
-| use_residual | bool | — |
-| use_batchnorm | bool | — |
-| dropout | float | 0.0–0.5 |
-| pool_every | int | 1–4 |
-| pool_type | choice | max, avg |
-| fc_hidden | int | 0–512 |
-| lr | log float | 1e-4 to 0.1 |
-| wd | log float | 1e-6 to 0.01 |
-| optimizer | choice | sgd, adam, adamw |
+![Benchmark results](../assets/benchmark.png)
 
-**Task:** FashionMNIST (5k subset, 10 epochs per eval, ResNet-style CNN)
+| Method | Best Loss | Best Acc | LLM Fallbacks |
+|--------|-----------|----------|---------------|
+| **LLM (Claude)** | **0.385** | **85.4%** | 0/5 |
+| Optuna TPE | 0.454 | 82.7% | — |
+| Random Search | 0.610 | 76.7% | — |
+| LLM (Qwen local) | 0.637 | 75.0% | 2/5 |
 
-Grid search can't participate here — even 2 values per parameter gives 2^14 = 16,384 combinations, far exceeding any reasonable budget.
+### Convergence
 
-## Run the benchmark yourself
+| Eval | LLM (Claude) | Optuna TPE | Random | LLM (Qwen) |
+|------|-------------|------------|--------|-------------|
+| 5 | **0.401** | 0.612 | 0.655 | 0.748 |
+| 10 | **0.399** | 0.454 | 0.655 | 0.637 |
+| 15 | **0.385** | 0.454 | 0.610 | 0.637 |
+
+Claude was ahead of Optuna from eval 5 onward — it started with good architectural priors (residual connections, AdamW, reasonable LR) instead of discovering them through trial and error.
+
+### What went wrong with the other methods
+
+**Optuna TPE** — 7 out of 15 evals scored above 1.0 (worse than random chance). With 14 parameters, TPE's surrogate model needs many more samples before it becomes useful. It found one good config at eval 8 but couldn't build on it.
+
+**Random search** — Actually outperformed Qwen, which says more about Qwen's parse failures than random's quality. Random got lucky with a few configs but has no mechanism to improve.
+
+**LLM (Qwen local)** — Failed to produce valid JSON on 2 of 5 iterations (40% fallback rate). When it did generate configs, they were reasonable but not as focused as Claude's. The local Qwen backend is experimental — it works for simpler search spaces but struggles with 14-key JSON output.
+
+### Why Claude wins on this search space
+
+With 14 parameters including categorical choices (activation, optimizer, pool type, residual on/off), the search space has complex interactions:
+
+- High LR + no batch norm = training instability
+- Deep networks + no residual = vanishing gradients
+- Dropout + small dataset subset = unnecessary regularization
+
+Claude starts with knowledge of these interactions. Optuna has to discover each one empirically, burning evals on configurations that any ML practitioner would avoid.
+
+### Run it yourself
 
 ```bash
-python examples/benchmark.py --n-evals 30
-python examples/benchmark.py --n-evals 30 --skip-qwen  # skip local model
+pip install swarmopt[llm]
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+python examples/benchmark.py
+python examples/benchmark.py --n-evals 30          # longer run
+python examples/benchmark.py --skip-qwen           # skip local model
+python examples/benchmark.py --skip-qwen --n-evals 50  # thorough comparison
 ```
-
-## Why this space favors LLM search
-
-With 14 parameters, random search and Optuna TPE are essentially exploring blind. TPE builds a surrogate model from `(config, score)` pairs, but with 14 dimensions it needs many samples before the surrogate is useful.
-
-The LLM starts with prior knowledge:
-
-- *"GELU generally outperforms ReLU"* — immediately focuses on better activations
-- *"Dropout hurts if the model is underfitting"* — reads the training curves to decide
-- *"Residual connections help past 4-5 blocks"* — knows the interaction between depth and skip connections
-- *"AdamW with lr ~1e-3 is a safe starting point"* — doesn't waste evals on lr=0.08 with Adam
-
-Optuna would eventually learn these patterns from data, but in 30 evals it barely has enough signal.
-
-## Claude vs Qwen
-
-The benchmark also compares Claude API (Haiku) against a local Qwen 2.5 1.5B model running on CPU:
-
-- **Claude**: faster responses (~1s), stronger reasoning, costs ~$0.01 per 30-eval run
-- **Qwen**: free, offline, ~3s per call, but weaker at complex JSON generation and may fall back to random more often
-
-Both should outperform Optuna and random on this search space, with Claude likely producing more consistent results due to stronger instruction following.
