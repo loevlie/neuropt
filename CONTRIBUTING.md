@@ -14,7 +14,6 @@ Thanks for your interest! Here are some ways to help:
 - **Multi-objective optimization** — optimize for accuracy AND inference speed simultaneously
 - **Architecture generation** — go beyond swapping components to designing new architectures from scratch
 - **Better local LLM support** — the Qwen backend works but has a high parse failure rate on complex search spaces. Prompt engineering or constrained decoding could help
-- **Early stopping** — use partial training curves to terminate bad configs before they finish
 
 ## Setup
 
