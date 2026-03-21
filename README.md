@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/banner.png" alt="Three robot researchers designing neural network architectures" width="700">
+  <img src="assets/banner.png" alt="Three robot researchers designing neural network architectures " width="700">
 </p>
 
 <p align="center">
