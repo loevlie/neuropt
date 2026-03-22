@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 
 from neuropt import ArchSearch, Categorical, IntUniform, LogUniform, Uniform
+from neuropt.backends.base import BaseLLMBackend
 from neuropt.introspect import (
     apply_config,
     build_ml_context,
@@ -615,6 +616,70 @@ class TestAttentionPool:
 # ══════════════════════════════════════════════════════════════════════════
 #  BACKWARD COMPAT (old log format)
 # ══════════════════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════════════
+#  API COST TRACKING
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestCostTracking:
+    def test_base_backend_initializes_counters(self):
+        class DummyBackend(BaseLLMBackend):
+            def generate(self, prompt, max_tokens=1024):
+                return ""
+            def is_available(self):
+                return True
+
+        b = DummyBackend()
+        assert b.total_input_tokens == 0
+        assert b.total_output_tokens == 0
+        assert b.total_cost is None
+
+    def test_claude_cost_calculation(self):
+        from neuropt.backends.claude_backend import ClaudeBackend
+        b = ClaudeBackend.__new__(ClaudeBackend)
+        b.total_input_tokens = 0
+        b.total_output_tokens = 0
+        b._model = "claude-haiku-4-5-20251001"
+        b._client = None
+        # Simulate usage
+        b.total_input_tokens = 10_000
+        b.total_output_tokens = 2_000
+        # Haiku: $1/M in, $5/M out
+        expected = 10_000 * 1.0 / 1e6 + 2_000 * 5.0 / 1e6
+        assert abs(b.total_cost - expected) < 1e-9
+
+    def test_claude_cost_family_fallback(self):
+        from neuropt.backends.claude_backend import ClaudeBackend
+        b = ClaudeBackend.__new__(ClaudeBackend)
+        b.total_input_tokens = 1_000_000
+        b.total_output_tokens = 100_000
+        b._model = "claude-sonnet-4-5-some-future-version"
+        b._client = None
+        # Should match "claude-sonnet" family: $3/M in, $15/M out
+        expected = 1_000_000 * 3.0 / 1e6 + 100_000 * 15.0 / 1e6
+        assert abs(b.total_cost - expected) < 1e-9
+
+    def test_claude_cost_unknown_model(self):
+        from neuropt.backends.claude_backend import ClaudeBackend
+        b = ClaudeBackend.__new__(ClaudeBackend)
+        b.total_input_tokens = 1000
+        b.total_output_tokens = 500
+        b._model = "some-unknown-model"
+        b._client = None
+        assert b.total_cost is None
+
+    def test_summary_prints_cost(self, tmp_log, capsys):
+        search = ArchSearch(
+            train_fn=lambda cfg: {"score": cfg["x"]},
+            search_space={"x": (1.0, 10.0)},
+            backend="none",
+            log_path=tmp_log,
+        )
+        search.run(max_evals=2)
+        captured = capsys.readouterr().out
+        # backend=none has no tokens, so no cost line
+        assert "API cost" not in captured
+
 
 class TestBackwardCompat:
     def test_old_log_format_resume(self, tmp_log):

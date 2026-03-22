@@ -7,6 +7,7 @@ from neuropt.backends.base import BaseLLMBackend
 class OpenAIBackend(BaseLLMBackend):
 
     def __init__(self, model: str = "gpt-4o-mini"):
+        super().__init__()
         self._model = model
         self._client = None
 

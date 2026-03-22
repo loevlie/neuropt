@@ -695,6 +695,13 @@ class ArchSearch:
             print(f"  Best config: {json.dumps(self.best_config, default=str)}")
         if self._backend:
             print(f"  LLM: {self.llm_success} ok, {self.llm_fallback} fallback")
+            tokens_in = self._backend.total_input_tokens
+            tokens_out = self._backend.total_output_tokens
+            if tokens_in or tokens_out:
+                print(f"  Tokens: {tokens_in:,} in + {tokens_out:,} out")
+                cost = self._backend.total_cost
+                if cost is not None:
+                    print(f"  API cost: ${cost:.4f}")
         print("=" * 60)
 
 

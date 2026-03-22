@@ -12,6 +12,7 @@ class QwenBackend(BaseLLMBackend):
     MODEL_ID = "Qwen/Qwen2.5-1.5B-Instruct"
 
     def __init__(self):
+        super().__init__()
         self._model = None
         self._tokenizer = None
 
