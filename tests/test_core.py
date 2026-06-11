@@ -2,7 +2,6 @@
 
 import copy
 import json
-import math
 import os
 import tempfile
 
@@ -13,18 +12,17 @@ import torch.nn as nn
 from neuropt import ArchSearch, Categorical, IntUniform, LogUniform, Uniform
 from neuropt.backends.base import BaseLLMBackend
 from neuropt.introspect import (
+    AttentionPool2d,
+    _classify_dropout_path,
+    _detect_pretrained,
+    _find_last_linear,
+    _find_layer_groups,
     apply_config,
     build_ml_context,
     build_search_space,
     introspect,
     make_wrapped_train_fn,
-    _detect_pretrained,
-    _classify_dropout_path,
-    _find_layer_groups,
-    _find_last_linear,
-    AttentionPool2d,
 )
-
 
 # ── Fixtures ─────────────────────────────────────────────────────────────
 
@@ -701,3 +699,177 @@ class TestBackwardCompat:
         )
         search.run(max_evals=2)
         assert search.total_experiments == 3  # 1 old + 2 new
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  DIMENSION VALIDATION
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestDimensionValidation:
+    def test_uniform_rejects_inverted_bounds(self):
+        with pytest.raises(ValueError):
+            Uniform(2.0, 1.0)
+
+    def test_loguniform_rejects_inverted_bounds(self):
+        with pytest.raises(ValueError):
+            LogUniform(1.0, 0.5)
+
+    def test_loguniform_rejects_nonpositive_low(self):
+        with pytest.raises(ValueError):
+            LogUniform(0, 1.0)
+
+    def test_intuniform_rejects_inverted_bounds(self):
+        with pytest.raises(ValueError):
+            IntUniform(5, 3)
+
+    def test_categorical_rejects_empty(self):
+        with pytest.raises(ValueError):
+            Categorical([])
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  DIMENSION INFERENCE PRECEDENCE
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestInferDimPrecedence:
+    """Pin _infer_dim's precedence: int-like name > log heuristic > int bounds."""
+
+    def test_int_name_wins_over_large_ratio(self):
+        from neuropt.arch_search import _infer_dim
+        dim = _infer_dim("hidden_dim", (32, 4096))
+        assert isinstance(dim, IntUniform)
+
+    def test_large_ratio_int_tuple_becomes_log(self):
+        from neuropt.arch_search import _infer_dim
+        dim = _infer_dim("foo", (1, 1000))
+        assert isinstance(dim, LogUniform)
+
+    def test_plain_int_tuple_becomes_int(self):
+        from neuropt.arch_search import _infer_dim
+        dim = _infer_dim("foo", (1, 50))
+        assert isinstance(dim, IntUniform)
+
+    def test_log_scale_name(self):
+        from neuropt.arch_search import _infer_dim
+        dim = _infer_dim("lr", (1e-4, 1e-1))
+        assert isinstance(dim, LogUniform)
+
+    def test_plain_float_tuple_becomes_uniform(self):
+        from neuropt.arch_search import _infer_dim
+        dim = _infer_dim("x", (0.1, 0.9))
+        assert isinstance(dim, Uniform)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  TOKEN TRACKING THROUGH THE SEARCH SUMMARY
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestTokenTracking:
+    def test_backend_tokens_reach_summary(self, tmp_log, capsys):
+        class CountingBackend(BaseLLMBackend):
+            def generate(self, prompt, max_tokens=1024):
+                self.total_input_tokens += 100
+                self.total_output_tokens += 50
+                return '[{"x": 2.0}, {"x": 3.0}, {"x": 4.0}]'
+
+            def is_available(self):
+                return True
+
+        search = ArchSearch(
+            train_fn=lambda cfg: {"score": cfg["x"]},
+            search_space={"x": (1.0, 10.0)},
+            backend=CountingBackend(),
+            log_path=tmp_log,
+        )
+        search.run(max_evals=3)
+        captured = capsys.readouterr().out
+        assert "Tokens: 100 in + 50 out" in captured
+
+    def test_openai_cost_calculation(self):
+        from neuropt.backends.openai_backend import OpenAIBackend
+        b = OpenAIBackend.__new__(OpenAIBackend)
+        b.total_input_tokens = 10_000
+        b.total_output_tokens = 2_000
+        b._model = "gpt-4o-mini"
+        b._client = None
+        # gpt-4o-mini: $0.15/M in, $0.60/M out
+        expected = 10_000 * 0.15 / 1e6 + 2_000 * 0.60 / 1e6
+        assert abs(b.total_cost - expected) < 1e-9
+
+    def test_openai_cost_dated_snapshot_prefix(self):
+        from neuropt.backends.openai_backend import OpenAIBackend
+        b = OpenAIBackend.__new__(OpenAIBackend)
+        b.total_input_tokens = 1_000_000
+        b.total_output_tokens = 0
+        b._model = "gpt-4o-mini-2024-07-18"
+        b._client = None
+        # Must match gpt-4o-mini ($0.15/M), not the shorter gpt-4o prefix
+        assert abs(b.total_cost - 0.15) < 1e-9
+
+    def test_openai_cost_unknown_model(self):
+        from neuropt.backends.openai_backend import OpenAIBackend
+        b = OpenAIBackend.__new__(OpenAIBackend)
+        b.total_input_tokens = 1000
+        b.total_output_tokens = 500
+        b._model = "some-unknown-model"
+        b._client = None
+        assert b.total_cost is None
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  POOL DIMENSIONALITY
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestPoolDims:
+    def test_2d_pool_offers_attention(self):
+        model = nn.Sequential(nn.Conv2d(3, 8, 3), nn.AdaptiveAvgPool2d(1))
+        info = introspect(model)
+        space = build_search_space(info)
+        assert "attention" in space["pool_type"].choices
+
+    def test_1d_pool_excludes_attention(self):
+        model = nn.Sequential(nn.Conv1d(3, 8, 3), nn.AdaptiveAvgPool1d(1))
+        info = introspect(model)
+        space = build_search_space(info)
+        assert info["pool_dims"] == {"1d"}
+        assert "attention" not in space["pool_type"].choices
+        assert {"avg", "max"} <= set(space["pool_type"].choices)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  CLI RESULTS (min/max direction)
+# ══════════════════════════════════════════════════════════════════════════
+
+class TestCLIResults:
+    @pytest.fixture
+    def maximize_log(self, tmp_log):
+        rows = [
+            {"id": 1, "config": {"x": 1.0}, "score": 0.6,
+             "scalars": {"accuracy": 0.6}, "status": "ok"},
+            {"id": 2, "config": {"x": 2.0}, "score": 0.9,
+             "scalars": {"accuracy": 0.9}, "status": "ok"},
+            {"id": 3, "config": {"x": 3.0}, "score": 0.7,
+             "scalars": {"accuracy": 0.7}, "status": "ok"},
+        ]
+        with open(tmp_log, "w") as f:
+            for row in rows:
+                f.write(json.dumps(row) + "\n")
+        return tmp_log
+
+    def test_results_minimize_default(self, maximize_log):
+        from typer.testing import CliRunner
+
+        from neuropt.cli import app
+        result = CliRunner().invoke(app, ["results", maximize_log])
+        assert result.exit_code == 0
+        # Lowest score listed first
+        assert result.output.index("score=0.6000") < result.output.index("score=0.9000")
+
+    def test_results_maximize_flag(self, maximize_log):
+        from typer.testing import CliRunner
+
+        from neuropt.cli import app
+        result = CliRunner().invoke(app, ["results", maximize_log, "--maximize"])
+        assert result.exit_code == 0
+        # Highest score listed first
+        assert result.output.index("score=0.9000") < result.output.index("score=0.6000")

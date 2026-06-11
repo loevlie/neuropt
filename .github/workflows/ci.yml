@@ -25,6 +25,9 @@ jobs:
       - name: Install from source
         run: uv sync
 
+      - name: Lint
+        run: uvx ruff check .
+
       - name: Test PyPI install (clean venv)
         run: |
           uv venv /tmp/pypi-test --seed

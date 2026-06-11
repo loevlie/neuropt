@@ -43,6 +43,8 @@ class QwenBackend(BaseLLMBackend):
                 **inputs, max_new_tokens=max_tokens,
                 do_sample=True, temperature=0.7, top_p=0.9)
         generated = outputs[0][inputs["input_ids"].shape[1]:]
+        self.total_input_tokens += inputs["input_ids"].shape[1]
+        self.total_output_tokens += generated.shape[0]
         return self._tokenizer.decode(generated, skip_special_tokens=True)
 
     def is_available(self) -> bool:

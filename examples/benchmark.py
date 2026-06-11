@@ -15,7 +15,6 @@ Results are saved to benchmark_results.json.
 import argparse
 import json
 import math
-import os
 import random
 import time
 
@@ -24,8 +23,16 @@ import torch
 import torch.nn as nn
 import torchvision
 import torchvision.transforms as T
+from benchmark_utils import (
+    header,
+    print_convergence,
+    print_summary,
+    run_neuropt,
+    run_optuna,
+    run_random,
+    save_results,
+)
 from torch.utils.data import DataLoader, Subset
-
 
 # ── Shared setup ─────────────────────────────────────────────────────────
 
@@ -83,7 +90,7 @@ class ConfigurableCNN(nn.Module):
 
 
 def evaluate(cfg, train_loader, val_loader):
-    """Train and evaluate a single config. Returns (val_loss, accuracy, elapsed)."""
+    """Train and evaluate a single config. Returns (val_loss, accuracy, elapsed, *curves)."""
     t0 = time.time()
     try:
         model = ConfigurableCNN(cfg).to(DEVICE)
@@ -140,135 +147,6 @@ SEARCH_SPACE = {
 }
 
 
-def random_config(rng):
-    return {
-        "n_blocks": rng.randint(2, 8), "base_channels": rng.randint(16, 128),
-        "channel_growth": rng.uniform(1.0, 2.5), "kernel_size": rng.choice([3, 5]),
-        "activation": rng.choice(["relu", "gelu", "leaky_relu", "silu"]),
-        "use_residual": rng.choice([True, False]), "use_batchnorm": rng.choice([True, False]),
-        "dropout": rng.uniform(0.0, 0.5),
-        "pool_every": rng.randint(1, 4), "pool_type": rng.choice(["max", "avg"]),
-        "fc_hidden": rng.randint(0, 512),
-        "lr": 10 ** rng.uniform(-4, -1), "wd": 10 ** rng.uniform(-6, -2),
-        "optimizer": rng.choice(["sgd", "adam", "adamw"]),
-    }
-
-
-# ── Methods ──────────────────────────────────────────────────────────────
-
-def run_llm_search(backend_name, n_evals, train_loader, val_loader):
-    """Run neuropt ArchSearch with a given backend."""
-    from neuropt import ArchSearch
-
-    log_path = f"/tmp/bench_{backend_name}.jsonl"
-    if os.path.exists(log_path):
-        os.remove(log_path)
-
-    def train_fn(config):
-        result = evaluate(config, train_loader, val_loader)
-        if len(result) == 3:
-            return {"score": result[0], "accuracy": result[1]}
-        return {"score": result[0], "accuracy": result[1],
-                "train_losses": result[3], "val_losses": result[4], "val_accuracies": result[5]}
-
-    search = ArchSearch(
-        train_fn=train_fn,
-        search_space=SEARCH_SPACE,
-        backend=backend_name,
-        log_path=log_path,
-        batch_size=3,
-        timeout=60,
-    )
-    t0 = time.time()
-    search.run(max_evals=n_evals)
-    wall_time = time.time() - t0
-
-    with open(log_path) as f:
-        results = [json.loads(line) for line in f]
-
-    scores = [r["val_loss"] for r in results if r.get("status") == "ok"]
-    accs = [r["val_accuracy"] for r in results if r.get("status") == "ok" and r.get("val_accuracy")]
-    return {
-        "scores": scores,
-        "best_loss": min(scores) if scores else float("inf"),
-        "best_acc": max(accs) if accs else 0,
-        "wall_time": wall_time,
-        "n_evals": len(results),
-        "llm_success": search.llm_success,
-        "llm_fallback": search.llm_fallback,
-    }
-
-
-def run_optuna(n_evals, train_loader, val_loader):
-    """Run Optuna TPE over the same search space."""
-    import optuna
-    optuna.logging.set_verbosity(optuna.logging.WARNING)
-
-    scores = []
-
-    def objective(trial):
-        cfg = {
-            "n_blocks": trial.suggest_int("n_blocks", 2, 8),
-            "base_channels": trial.suggest_int("base_channels", 16, 128),
-            "channel_growth": trial.suggest_float("channel_growth", 1.0, 2.5),
-            "kernel_size": trial.suggest_categorical("kernel_size", [3, 5]),
-            "activation": trial.suggest_categorical("activation", ["relu", "gelu", "leaky_relu", "silu"]),
-            "use_residual": trial.suggest_categorical("use_residual", [True, False]),
-            "use_batchnorm": trial.suggest_categorical("use_batchnorm", [True, False]),
-            "dropout": trial.suggest_float("dropout", 0.0, 0.5),
-            "pool_every": trial.suggest_int("pool_every", 1, 4),
-            "pool_type": trial.suggest_categorical("pool_type", ["max", "avg"]),
-            "fc_hidden": trial.suggest_int("fc_hidden", 0, 512),
-            "lr": trial.suggest_float("lr", 1e-4, 0.1, log=True),
-            "wd": trial.suggest_float("wd", 1e-6, 0.01, log=True),
-            "optimizer": trial.suggest_categorical("optimizer", ["sgd", "adam", "adamw"]),
-        }
-        result = evaluate(cfg, train_loader, val_loader)
-        scores.append({"val_loss": result[0], "accuracy": result[1]})
-        print(f"  Optuna [{len(scores)}/{n_evals}] loss={result[0]:.4f} acc={result[1]:.4f} ({result[2]:.1f}s)")
-        return result[0]
-
-    study = optuna.create_study(direction="minimize",
-                                sampler=optuna.samplers.TPESampler(seed=42, n_startup_trials=3))
-    t0 = time.time()
-    study.optimize(objective, n_trials=n_evals)
-    wall_time = time.time() - t0
-
-    losses = [s["val_loss"] for s in scores]
-    accs = [s["accuracy"] for s in scores]
-    return {
-        "scores": losses,
-        "best_loss": min(losses),
-        "best_acc": max(accs),
-        "wall_time": wall_time,
-        "n_evals": len(scores),
-    }
-
-
-def run_random(n_evals, train_loader, val_loader):
-    """Random search baseline."""
-    rng = random.Random(42)
-    scores = []
-    t0 = time.time()
-
-    for i in range(n_evals):
-        cfg = random_config(rng)
-        result = evaluate(cfg, train_loader, val_loader)
-        scores.append({"val_loss": result[0], "accuracy": result[1]})
-        print(f"  Random [{i+1}/{n_evals}] loss={result[0]:.4f} acc={result[1]:.4f} ({result[2]:.1f}s)")
-
-    wall_time = time.time() - t0
-    losses = [s["val_loss"] for s in scores]
-    accs = [s["accuracy"] for s in scores]
-    return {
-        "scores": losses,
-        "best_loss": min(losses),
-        "best_acc": max(accs),
-        "wall_time": wall_time,
-        "n_evals": len(scores),
-    }
-
-
 # ── Main ─────────────────────────────────────────────────────────────────
 
 def main():
@@ -281,77 +159,51 @@ def main():
 
     print(f"Device: {DEVICE}")
     print(f"Budget: {args.n_evals} evaluations per method")
-    print(f"Search space: 14 parameters (architecture + training)")
+    print("Search space: 14 parameters (architecture + training)")
     print(f"Epochs per eval: {EPOCHS}")
     print()
 
     train_loader, val_loader = get_dataloaders()
 
+    def eval_cfg(cfg):
+        return evaluate(cfg, train_loader, val_loader)
+
+    def train_fn(config):
+        result = eval_cfg(config)
+        if len(result) == 3:
+            return {"score": result[0], "accuracy": result[1]}
+        return {"score": result[0], "accuracy": result[1],
+                "train_losses": result[3], "val_losses": result[4], "val_accuracies": result[5]}
+
     # Warmup
     print("Warmup eval...")
-    cfg = random_config(random.Random(0))
-    evaluate(cfg, train_loader, val_loader)
-    print()
+    from neuropt.arch_search import _normalize_search_space, _random_config
+    eval_cfg(_random_config(_normalize_search_space(SEARCH_SPACE), random.Random(0)))
 
     all_results = {}
 
-    # 1. LLM (Claude)
-    if not args.skip_claude:
-        print("=" * 60)
-        print("LLM Search (Claude)")
-        print("=" * 60)
+    for backend, label, skip in [("claude", "LLM (Claude)", args.skip_claude),
+                                 ("qwen", "LLM (Qwen)", args.skip_qwen)]:
+        if skip:
+            continue
+        header(f"LLM Search ({backend})")
         try:
-            all_results["LLM (Claude)"] = run_llm_search("claude", args.n_evals, train_loader, val_loader)
+            all_results[label] = run_neuropt(
+                train_fn, SEARCH_SPACE, backend, args.n_evals,
+                f"/tmp/bench_{backend}.jsonl", timeout=60)
         except Exception as e:
             print(f"  Skipped: {e}")
 
-    # 2. LLM (Qwen local)
-    if not args.skip_qwen:
-        print("\n" + "=" * 60)
-        print("LLM Search (Qwen local)")
-        print("=" * 60)
-        try:
-            all_results["LLM (Qwen)"] = run_llm_search("qwen", args.n_evals, train_loader, val_loader)
-        except Exception as e:
-            print(f"  Skipped: {e}")
-
-    # 3. Optuna TPE
     if not args.skip_optuna:
-        print("\n" + "=" * 60)
-        print("Optuna TPE")
-        print("=" * 60)
-        all_results["Optuna TPE"] = run_optuna(args.n_evals, train_loader, val_loader)
+        header("Optuna TPE")
+        all_results["Optuna TPE"] = run_optuna(eval_cfg, SEARCH_SPACE, args.n_evals)
 
-    # 4. Random search
-    print("\n" + "=" * 60)
-    print("Random Search")
-    print("=" * 60)
-    all_results["Random"] = run_random(args.n_evals, train_loader, val_loader)
+    header("Random Search")
+    all_results["Random"] = run_random(eval_cfg, SEARCH_SPACE, args.n_evals)
 
-    # Summary
-    print("\n" + "=" * 60)
-    print(f"RESULTS ({args.n_evals} evals each)")
-    print("=" * 60)
-    print(f"{'Method':<20} {'Best Loss':>10} {'Best Acc':>10} {'Wall Time':>10}")
-    print("-" * 55)
-    for name, r in sorted(all_results.items(), key=lambda x: x[1]["best_loss"]):
-        print(f"{name:<20} {r['best_loss']:>10.4f} {r['best_acc']:>10.4f} {r['wall_time']:>9.1f}s")
+    print_summary(all_results, args.n_evals, show_time=True)
+    print_convergence(all_results, args.n_evals, col_width=16)
 
-    # Convergence
-    print(f"\nConvergence (best-so-far at each eval):")
-    milestones = [5, 10, 15, 20, 25, 30, 40, 50]
-    milestones = [m for m in milestones if m <= args.n_evals]
-    header = f"{'Eval':>6}" + "".join(f"{name:>16}" for name in all_results.keys())
-    print(header)
-    for m in milestones:
-        line = f"{m:>6}"
-        for name, r in all_results.items():
-            s = r["scores"][:m]
-            best = min(s) if s else float("inf")
-            line += f"{best:>16.4f}"
-        print(line)
-
-    # Save
     # Save per-method results separately so they don't overwrite each other
     for name, r in all_results.items():
         slug = name.lower().replace(" ", "_").replace("(", "").replace(")", "")
@@ -360,10 +212,7 @@ def main():
             json.dump(r, f, indent=2, default=str)
         print(f"  Saved {name} → {path}")
 
-    out_path = "benchmark_results.json"
-    with open(out_path, "w") as f:
-        json.dump(all_results, f, indent=2, default=str)
-    print(f"\nSaved to {out_path}")
+    save_results(all_results, "benchmark_results.json")
 
 
 if __name__ == "__main__":

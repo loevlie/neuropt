@@ -14,7 +14,6 @@ import torchvision
 import torchvision.transforms as T
 from torch.utils.data import DataLoader, Subset
 
-
 # ── Your model ───────────────────────────────────────────────────────────
 
 model = torchvision.models.resnet18(weights=None, num_classes=10)

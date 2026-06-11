@@ -12,17 +12,15 @@ import re
 import signal
 import sys
 import time
-import traceback
 
 from neuropt.search_space import Categorical, IntUniform, LogUniform, Uniform
-
 
 DEFAULT_ML_CONTEXT = """\
 You are an ML researcher running hyperparameter and architecture search.
 Analyze the experiment history and propose better configurations.
 
 **Reading the training curves (this is your main signal):**
-- Train loss dropping + val loss rising = OVERFITTING → add regularization, reduce model size, increase weight decay
+- Train loss dropping + val loss rising = OVERFITTING → add regularization, reduce size, more weight decay
 - Train loss stuck high = UNDERFITTING → more capacity, less regularization, higher LR
 - Train AND val both dropping smoothly = GOOD FIT → stay nearby, fine-tune
 - Loss oscillating or exploding = LR too high → reduce by 2-5x
@@ -90,7 +88,9 @@ class ArchSearch:
     @classmethod
     def _from_pytorch_model(cls, model, train_fn, backend, pretrained=None, **kwargs):
         from neuropt.introspect import (
-            introspect, build_search_space, build_ml_context,
+            build_ml_context,
+            build_search_space,
+            introspect,
             make_wrapped_train_fn,
         )
 
@@ -120,7 +120,7 @@ class ArchSearch:
         if info.get("mha_dropout_paths"):
             print(f"  MHA dropout: {len(info['mha_dropout_paths'])} layers")
         if info.get("is_pretrained"):
-            print(f"  Pretrained: yes (fine-tuning strategies enabled)")
+            print("  Pretrained: yes (fine-tuning strategies enabled)")
             if info.get("last_linear_path"):
                 print(f"  Head: {info['last_linear_path']}")
         print(f"  Search space: {list(search_space.keys())}")
@@ -137,9 +137,11 @@ class ArchSearch:
     @classmethod
     def _from_sklearn_model(cls, model, train_fn, backend, **kwargs):
         from neuropt.introspect import (
-            introspect_sklearn, build_sklearn_search_space_with_llm,
-            build_sklearn_ml_context, make_sklearn_wrapped_train_fn,
             _fallback_sklearn_search_space,
+            build_sklearn_ml_context,
+            build_sklearn_search_space_with_llm,
+            introspect_sklearn,
+            make_sklearn_wrapped_train_fn,
         )
 
         info = introspect_sklearn(model)
@@ -245,14 +247,11 @@ class ArchSearch:
         # Restore best from existing log (handles both old and new format)
         for row in history:
             if row.get("status") == "ok":
-                vl = row.get("score", row.get("val_loss", float("inf")))
-                if self._is_better(vl):
-                    self.best_score = vl
+                score = _get_score(row)
+                if score is not None and self._is_better(score):
+                    self.best_score = score
                     self.best_config = row.get("config")
-                    scalars = row.get("scalars", {})
-                    self.best_accuracy = scalars.get(
-                        "accuracy", scalars.get(
-                            "val_accuracy", row.get("val_accuracy", 0)))
+                    self.best_accuracy = _get_accuracy(row)
 
         backend_name = self._backend.name if self._backend else "None (random)"
         print("=" * 60)
@@ -298,8 +297,7 @@ class ArchSearch:
                 if self._is_better(result["score"]):
                     self.best_score = result["score"]
                     self.best_config = cfg
-                    self.best_accuracy = result.get("scalars", {}).get(
-                        "accuracy", result.get("scalars", {}).get("val_accuracy", 0))
+                    self.best_accuracy = _get_accuracy(result)
                     improved = " *** NEW BEST ***"
 
                 logger.log(iteration, cfg, result, source)
@@ -314,15 +312,7 @@ class ArchSearch:
                 self.total_experiments += 1
 
                 # Compact status line — show score + up to 3 scalar extras
-                scalars = result.get("scalars", {})
-                extra_parts = []
-                for k, v in list(scalars.items())[:3]:
-                    if isinstance(v, float):
-                        extra_parts.append(f"{k}={v:.4f}")
-                    elif isinstance(v, int):
-                        extra_parts.append(f"{k}={v:,}")
-                    else:
-                        extra_parts.append(f"{k}={v}")
+                extra_parts = _format_scalars(result.get("scalars", {}), max_n=3)
                 extra = f" ({' '.join(extra_parts)})" if extra_parts else ""
                 status_s = f" [{result['status']}]" if result["status"] != "ok" else ""
                 cfg_s = _short_config(cfg)
@@ -377,7 +367,8 @@ class ArchSearch:
                     prompt = self._build_retry_prompt(configs, dupes, history)
                 else:
                     # Last attempt — keep non-duplicate configs, replace dupes with random
-                    print(f"  [still {len(dupes)} duplicates after {self.MAX_RETRIES} tries, replacing with random]")
+                    print(f"  [still {len(dupes)} duplicates after {self.MAX_RETRIES} tries, "
+                          f"replacing with random]")
                     for i in dupes:
                         configs[i] = _random_config(self.search_space, rng)
                     self.llm_success += 1
@@ -436,12 +427,7 @@ class ArchSearch:
                 score = _get_score(prev_result)
                 score_s = f"{score:.4f}" if isinstance(score, (int, float)) else str(score)
                 result_parts = [f"score={score_s}"]
-                scalars = prev_result.get("scalars", {})
-                for k, v in list(scalars.items())[:3]:
-                    if isinstance(v, float):
-                        result_parts.append(f"{k}={v:.4f}")
-                    else:
-                        result_parts.append(f"{k}={v}")
+                result_parts += _format_scalars(prev_result.get("scalars", {}), max_n=3)
                 parts.append(f"  → Result: {', '.join(result_parts)}")
             parts.append("")
 
@@ -451,7 +437,7 @@ class ArchSearch:
             parts.append(f"Config: {json.dumps(self.best_config, default=str)}")
             parts.append("")
 
-        parts.append(f"## Task\n")
+        parts.append("## Task\n")
         parts.append(
             f"Propose exactly {self.batch_size} NEW configs that are DIFFERENT from "
             "anything already tried. Focus on changes that could beat the current best. "
@@ -512,14 +498,14 @@ class ArchSearch:
 
         except _Timeout:
             worst = float("inf") if self.minimize else float("-inf")
-            return {"score": worst, "elapsed": time.time() - start,
-                    "status": "timeout", "error": f">{self.timeout}s",
-                    "train_losses": [], "val_losses": [], "val_accuracies": []}
+            return {"score": worst, "scalars": {}, "curves": {},
+                    "elapsed": time.time() - start,
+                    "status": "timeout", "error": f">{self.timeout}s"}
         except Exception as e:
             worst = float("inf") if self.minimize else float("-inf")
-            return {"score": worst, "elapsed": time.time() - start,
-                    "status": "error", "error": f"{type(e).__name__}: {e}",
-                    "train_losses": [], "val_losses": [], "val_accuracies": []}
+            return {"score": worst, "scalars": {}, "curves": {},
+                    "elapsed": time.time() - start,
+                    "status": "error", "error": f"{type(e).__name__}: {e}"}
         finally:
             try:
                 signal.alarm(0)
@@ -634,7 +620,7 @@ class ArchSearch:
                 parts.append("")
 
         # Task
-        parts.append(f"## Task\n")
+        parts.append("## Task\n")
         parts.append(
             f"Propose exactly {self.batch_size} configs to try next.\n\n"
             "Rules:\n"
@@ -791,29 +777,26 @@ def _infer_dim(name, value):
     if isinstance(value, list):
         return Categorical(value)
 
-    # Tuple of (low, high) → infer numeric type
+    # Tuple of (low, high) → infer numeric type. Precedence:
+    #   1. int bounds + int-like name → IntUniform (even if the ratio is large)
+    #   2. log-scale name, or ratio > 100 → LogUniform
+    #   3. int bounds → IntUniform
+    #   4. otherwise → Uniform
     if isinstance(value, tuple) and len(value) == 2:
         lo, hi = value
+        both_int = isinstance(lo, int) and isinstance(hi, int)
+        int_like_name = (name.lower() in _INT_NAMES
+                         or name.startswith("n_") or name.startswith("num_"))
 
-        # Both ints and name suggests integer → IntUniform
-        if isinstance(lo, int) and isinstance(hi, int):
-            if name.lower() in _INT_NAMES or name.startswith("n_") or name.startswith("num_"):
-                return IntUniform(lo, hi)
+        if both_int and int_like_name:
+            return IntUniform(lo, hi)
 
         lo, hi = float(lo), float(hi)
-
-        # Name suggests log scale, or ratio > 100 with small values
-        name_lower = name.lower()
-        if name_lower in _LOG_SCALE_NAMES:
-            if lo > 0:
-                return LogUniform(lo, hi)
-
-        # Large ratio with small min → probably log scale
-        if lo > 0 and hi / lo > 100:
+        log_like = name.lower() in _LOG_SCALE_NAMES or (lo > 0 and hi / lo > 100)
+        if log_like and lo > 0:
             return LogUniform(lo, hi)
 
-        # Both ints → IntUniform
-        if isinstance(value[0], int) and isinstance(value[1], int):
+        if both_int:
             return IntUniform(int(lo), int(hi))
 
         return Uniform(lo, hi)
@@ -953,6 +936,28 @@ def _short_config(cfg):
 def _get_score(row):
     """Get score from a history row (handles old and new log format)."""
     return row.get("score", row.get("val_loss"))
+
+
+def _get_accuracy(row):
+    """Get accuracy from a result/history row (handles old and new log format)."""
+    scalars = row.get("scalars", {})
+    return scalars.get(
+        "accuracy", scalars.get("val_accuracy", row.get("val_accuracy", 0)))
+
+
+def _format_scalars(scalars, max_n=3):
+    """Format up to max_n scalars as ["k=v", ...] strings for display."""
+    parts = []
+    for k, v in list(scalars.items())[:max_n]:
+        if isinstance(v, bool):
+            parts.append(f"{k}={v}")
+        elif isinstance(v, float):
+            parts.append(f"{k}={v:.4f}")
+        elif isinstance(v, int):
+            parts.append(f"{k}={v:,}")
+        else:
+            parts.append(f"{k}={v}")
+    return parts
 
 
 def _get_curve(row, key):

@@ -34,6 +34,7 @@ def _load_script(script_path: Path):
     search_space = getattr(module, "search_space", None)
     model = getattr(module, "model", None)
     ml_context = getattr(module, "ml_context", None)
+    minimize = getattr(module, "minimize", None)
 
     if train_fn is None:
         typer.echo("Error: script must define a 'train_fn' function", err=True)
@@ -44,7 +45,7 @@ def _load_script(script_path: Path):
                    err=True)
         raise typer.Exit(1)
 
-    return train_fn, search_space, model, ml_context
+    return train_fn, search_space, model, ml_context, minimize
 
 
 @app.command()
@@ -55,7 +56,10 @@ def run(
     batch_size: int = typer.Option(3, "--batch-size", "-b", help="Configs per LLM call"),
     device: Optional[str] = typer.Option(None, help="Device (cuda, mps, cpu). Auto-detects if omitted."),
     timeout: int = typer.Option(600, help="Max seconds per experiment"),
-    max_evals: Optional[int] = typer.Option(None, "--max-evals", "-n", help="Stop after N experiments (default: run forever)"),
+    max_evals: Optional[int] = typer.Option(
+        None, "--max-evals", "-n", help="Stop after N experiments (default: run forever)"),
+    maximize: bool = typer.Option(
+        False, "--maximize", help="Higher scores are better (accuracy, AUROC). Default: minimize (loss)."),
 ):
     """Run LLM-guided optimization on a training script.
 
@@ -67,10 +71,19 @@ def run(
         OR model = nn.Module (auto-introspected)
 
     Optional: ml_context = "..." to give the LLM domain knowledge.
+    Optional: minimize = False if higher scores are better (or pass --maximize).
     """
     from neuropt import ArchSearch
 
-    train_fn, search_space, model, ml_context = _load_script(script)
+    train_fn, search_space, model, ml_context, script_minimize = _load_script(script)
+
+    # --maximize flag wins; otherwise honor a `minimize` attribute in the script
+    if maximize:
+        minimize = False
+    elif script_minimize is not None:
+        minimize = bool(script_minimize)
+    else:
+        minimize = True
 
     kwargs = dict(
         backend=backend,
@@ -78,6 +91,7 @@ def run(
         batch_size=batch_size,
         device=device,
         timeout=timeout,
+        minimize=minimize,
     )
     if ml_context:
         kwargs["ml_context"] = ml_context
@@ -97,9 +111,9 @@ def inspect(
     script: Path = typer.Argument(..., help="Training script with a 'model' variable"),
 ):
     """Show what neuropt would search over for a given model."""
-    from neuropt.introspect import introspect, build_search_space
+    from neuropt.introspect import build_search_space, introspect
 
-    _, _, model, _ = _load_script(script)
+    _, _, model, _, _ = _load_script(script)
     if model is None:
         typer.echo("No 'model' variable found — nothing to introspect.", err=True)
         typer.echo("This command is for scripts that define model = nn.Module(...).")
@@ -125,9 +139,13 @@ def inspect(
 def results(
     log: Path = typer.Argument("search.jsonl", help="Log file to analyze"),
     top: int = typer.Option(10, help="Show top N results"),
+    maximize: bool = typer.Option(
+        False, "--maximize", help="Higher scores are better (use if the search ran with maximize)."),
 ):
     """Show results from a search log."""
     import json
+
+    from neuropt.arch_search import _format_scalars, _get_score
 
     if not log.exists():
         typer.echo(f"No log file at {log}", err=True)
@@ -144,11 +162,14 @@ def results(
         typer.echo("Empty log file.")
         raise typer.Exit(0)
 
-    def _get_score(r):
-        return r.get("score", r.get("val_loss", float("inf")))
+    worst = float("-inf") if maximize else float("inf")
+
+    def _score(r):
+        s = _get_score(r)
+        return worst if s is None else s
 
     ok = [r for r in rows if r.get("status") == "ok"]
-    ok.sort(key=lambda r: _get_score(r))
+    ok.sort(key=_score, reverse=maximize)
 
     typer.echo(f"\nTotal experiments: {len(rows)}")
     typer.echo(f"Successful: {len(ok)}")
@@ -159,18 +180,14 @@ def results(
     typer.echo("-" * 70)
     for i, r in enumerate(ok[:top]):
         cfg = r.get("config", {})
-        score = _get_score(r)
+        score = _score(r)
         # Show scalars (new format) or legacy keys
         scalars = r.get("scalars", {})
-        extra_parts = []
         if scalars:
-            for k, v in list(scalars.items())[:4]:
-                if isinstance(v, float):
-                    extra_parts.append(f"{k}={v:.4f}")
-                elif isinstance(v, int):
-                    extra_parts.append(f"{k}={v:,}")
+            extra_parts = _format_scalars(scalars, max_n=4)
         else:
             # Legacy format
+            extra_parts = []
             if r.get("val_accuracy"):
                 extra_parts.append(f"acc={r['val_accuracy']:.4f}")
             if r.get("n_params"):
@@ -182,12 +199,12 @@ def results(
         typer.echo(f"      {cfg_s}")
 
     # Convergence
-    typer.echo(f"\nConvergence:")
-    best = float("inf")
+    typer.echo("\nConvergence:")
+    best = worst
     milestones = [1, 5, 10, 25, 50, 100, 250, 500, 1000]
     for i, r in enumerate(rows):
-        s = _get_score(r)
-        if r.get("status") == "ok" and s < best:
+        s = _score(r)
+        if r.get("status") == "ok" and (s > best if maximize else s < best):
             best = s
         if (i + 1) in milestones:
             typer.echo(f"  After {i+1:>4} evals: {best:.4f}")

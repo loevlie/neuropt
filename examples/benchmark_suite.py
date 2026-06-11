@@ -24,12 +24,9 @@ import argparse
 import json
 import math
 import os
-import random
 import time
-import warnings
 
 import numpy as np
-
 
 # ── Device detection ─────────────────────────────────────────────────────
 
@@ -236,7 +233,8 @@ def make_tasks(device, n_evals):
         },
         "train_fn_factory": resnet_finetune_factory,
         "optuna_space": lambda trial: {
-            "freeze_strategy": trial.suggest_categorical("freeze_strategy", ["full", "head_only", "last_two"]),
+            "freeze_strategy": trial.suggest_categorical(
+                "freeze_strategy", ["full", "head_only", "last_two"]),
             "lr": trial.suggest_float("lr", 1e-5, 1e-2, log=True),
             "wd": trial.suggest_float("wd", 1e-6, 1e-2, log=True),
             "optimizer": trial.suggest_categorical("optimizer", ["adam", "adamw"]),
@@ -264,7 +262,7 @@ def make_tasks(device, n_evals):
                                 batch_size=16, shuffle=False, num_workers=0)
 
         def train_fn(config):
-            from torchvision.models import vit_b_16, ViT_B_16_Weights
+            from torchvision.models import ViT_B_16_Weights, vit_b_16
 
             model = vit_b_16(weights=ViT_B_16_Weights.DEFAULT)
             model.heads.head = nn.Linear(model.heads.head.in_features, 10)
@@ -333,7 +331,8 @@ def make_tasks(device, n_evals):
         },
         "train_fn_factory": vit_finetune_factory,
         "optuna_space": lambda trial: {
-            "freeze_strategy": trial.suggest_categorical("freeze_strategy", ["full", "head_only", "last_blocks"]),
+            "freeze_strategy": trial.suggest_categorical(
+                "freeze_strategy", ["full", "head_only", "last_blocks"]),
             "lr": trial.suggest_float("lr", 1e-6, 1e-3, log=True),
             "wd": trial.suggest_float("wd", 1e-6, 1e-2, log=True),
             "optimizer": trial.suggest_categorical("optimizer", ["adam", "adamw"]),
@@ -345,15 +344,14 @@ def make_tasks(device, n_evals):
 
     def llm_sentiment_factory():
         try:
-            from transformers import AutoTokenizer, AutoModelForSequenceClassification
             from datasets import load_dataset
+            from transformers import AutoModelForSequenceClassification, AutoTokenizer
         except ImportError:
             raise ImportError(
                 "LLM benchmark requires: pip install transformers datasets"
-            )
+            ) from None
 
         import torch
-        import torch.nn as nn
         from torch.utils.data import DataLoader, TensorDataset
 
         tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
@@ -456,7 +454,8 @@ def make_tasks(device, n_evals):
         },
         "train_fn_factory": llm_sentiment_factory,
         "optuna_space": lambda trial: {
-            "freeze_strategy": trial.suggest_categorical("freeze_strategy", ["full", "embeddings_only", "last_layers"]),
+            "freeze_strategy": trial.suggest_categorical(
+                "freeze_strategy", ["full", "embeddings_only", "last_layers"]),
             "lr": trial.suggest_float("lr", 1e-6, 5e-4, log=True),
             "wd": trial.suggest_float("wd", 1e-6, 1e-2, log=True),
             "optimizer": trial.suggest_categorical("optimizer", ["adam", "adamw"]),
@@ -488,7 +487,6 @@ def make_tasks(device, n_evals):
 
         train_x, train_y = make_data(n_train)
         val_x, val_y = make_data(n_val)
-        import torch
         train_loader = DataLoader(
             TensorDataset(torch.tensor(train_x, dtype=torch.long), torch.tensor(train_y, dtype=torch.long)),
             batch_size=128, shuffle=True)
@@ -587,8 +585,8 @@ def make_tasks(device, n_evals):
         X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
 
         def train_fn(config):
+            from sklearn.metrics import accuracy_score
             from xgboost import XGBClassifier
-            from sklearn.metrics import log_loss, accuracy_score
 
             model = XGBClassifier(
                 n_estimators=config["n_estimators"],
@@ -607,7 +605,6 @@ def make_tasks(device, n_evals):
             r = model.evals_result()
             val_losses = r["validation_0"]["mlogloss"]
             preds = model.predict(X_val)
-            proba = model.predict_proba(X_val)
 
             return {
                 "score": val_losses[-1],
@@ -645,8 +642,8 @@ def make_tasks(device, n_evals):
 
     def rf_breast_cancer_factory():
         from sklearn.datasets import load_breast_cancer
+        from sklearn.metrics import accuracy_score, roc_auc_score
         from sklearn.model_selection import train_test_split
-        from sklearn.metrics import roc_auc_score, accuracy_score
 
         X, y = load_breast_cancer(return_X_y=True)
         X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -696,8 +693,8 @@ def make_tasks(device, n_evals):
 
     def lgbm_housing_factory():
         from sklearn.datasets import fetch_california_housing
-        from sklearn.model_selection import train_test_split
         from sklearn.metrics import mean_squared_error, r2_score
+        from sklearn.model_selection import train_test_split
 
         X, y = fetch_california_housing(return_X_y=True)
         X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -759,10 +756,11 @@ def make_tasks(device, n_evals):
 #  RUNNERS
 # ══════════════════════════════════════════════════════════════════════════
 
-def run_neuropt(task, backend, n_evals):
+def run_neuropt(task, backend, n_evals, log_prefix="bench_suite"):
     from neuropt import ArchSearch
 
-    log_path = f"/tmp/bench_suite_{task['name'].replace(' ', '_').replace('/', '_')}.jsonl"
+    slug = task['name'].replace(' ', '_').replace('/', '_')
+    log_path = f"/tmp/{log_prefix}_{slug}.jsonl"
     if os.path.exists(log_path):
         os.remove(log_path)
 
@@ -791,11 +789,14 @@ def run_neuropt(task, backend, n_evals):
         if s is not None and r.get("status") == "ok":
             scores.append(s)
 
-    if task["minimize"]:
+    return _summarize_scores(scores, task["minimize"], wall_time)
+
+
+def _summarize_scores(scores, minimize, wall_time):
+    if minimize:
         best_so_far = [min(scores[:i+1]) for i in range(len(scores))]
     else:
         best_so_far = [max(scores[:i+1]) for i in range(len(scores))]
-
     return {
         "scores": scores,
         "best_so_far": best_so_far,
@@ -830,63 +831,11 @@ def run_optuna(task, n_evals):
     study.optimize(objective, n_trials=n_evals)
     wall_time = time.time() - t0
 
-    if task["minimize"]:
-        best_so_far = [min(scores[:i+1]) for i in range(len(scores))]
-    else:
-        best_so_far = [max(scores[:i+1]) for i in range(len(scores))]
-
-    return {
-        "scores": scores,
-        "best_so_far": best_so_far,
-        "best_score": best_so_far[-1] if best_so_far else None,
-        "wall_time": wall_time,
-        "n_evals": len(scores),
-    }
+    return _summarize_scores(scores, task["minimize"], wall_time)
 
 
 def run_random(task, n_evals):
-    from neuropt import ArchSearch
-
-    log_path = f"/tmp/bench_suite_random_{task['name'].replace(' ', '_').replace('/', '_')}.jsonl"
-    if os.path.exists(log_path):
-        os.remove(log_path)
-
-    train_fn = task["train_fn_factory"]()
-
-    search = ArchSearch(
-        train_fn=train_fn,
-        search_space=task["search_space"],
-        backend="none",
-        log_path=log_path,
-        batch_size=3,
-        timeout=300,
-        minimize=task["minimize"],
-    )
-    t0 = time.time()
-    search.run(max_evals=n_evals)
-    wall_time = time.time() - t0
-
-    with open(log_path) as f:
-        results = [json.loads(line) for line in f]
-
-    scores = []
-    for r in results:
-        s = r.get("score", r.get("val_loss"))
-        if s is not None and r.get("status") == "ok":
-            scores.append(s)
-
-    if task["minimize"]:
-        best_so_far = [min(scores[:i+1]) for i in range(len(scores))]
-    else:
-        best_so_far = [max(scores[:i+1]) for i in range(len(scores))]
-
-    return {
-        "scores": scores,
-        "best_so_far": best_so_far,
-        "best_score": best_so_far[-1] if best_so_far else None,
-        "wall_time": wall_time,
-        "n_evals": len(scores),
-    }
+    return run_neuropt(task, "none", n_evals, log_prefix="bench_suite_random")
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -977,7 +926,7 @@ def main():
     print("SUMMARY")
     print("=" * 70)
 
-    for task_name, tr in all_results.items():
+    for tr in all_results.values():
         direction = "↓" if tr["minimize"] else "↑"
         print(f"\n{tr['task']} ({direction})")
         print(f"  {'Method':<15} {'Best':>10} {'Mean±Std':>18} {'Time':>10}")

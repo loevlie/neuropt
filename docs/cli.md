@@ -15,7 +15,8 @@ Your script must define:
 - `train_fn(config)` — returns dict with at least `{"score": float}`
 - `search_space` dict **or** `model` (nn.Module) — one of the two
 
-Optional: `ml_context` string with domain knowledge for the LLM.
+Optional: `ml_context` string with domain knowledge for the LLM,
+and `minimize = False` if higher scores are better.
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -25,6 +26,7 @@ Optional: `ml_context` string with domain knowledge for the LLM.
 | `-n` / `--max-evals` | unlimited | Stop after N experiments |
 | `--device` | auto | `cuda`, `mps`, `cpu` |
 | `--timeout` | 600 | Max seconds per experiment |
+| `--maximize` | off | Higher scores are better (accuracy, AUROC) |
 
 ## `neuropt inspect`
 
@@ -58,6 +60,7 @@ Analyze a search log.
 ```bash
 neuropt results search.jsonl
 neuropt results search.jsonl --top 20
+neuropt results search.jsonl --maximize   # if the search ran with --maximize
 ```
 
 Shows total experiments, top N results with configs, and convergence over time.

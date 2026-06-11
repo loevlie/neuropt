@@ -9,6 +9,8 @@ class Uniform:
     def __init__(self, low, high):
         self.low = float(low)
         self.high = float(high)
+        if self.low >= self.high:
+            raise ValueError(f"Uniform requires low < high, got ({low}, {high})")
 
     def to_internal(self, value):
         return float(value)
@@ -29,6 +31,10 @@ class LogUniform:
     def __init__(self, low, high):
         self.low = float(low)
         self.high = float(high)
+        if self.low <= 0:
+            raise ValueError(f"LogUniform requires low > 0, got ({low}, {high})")
+        if self.low >= self.high:
+            raise ValueError(f"LogUniform requires low < high, got ({low}, {high})")
 
     def to_internal(self, value):
         return math.log10(value)
@@ -49,6 +55,8 @@ class IntUniform:
     def __init__(self, low, high):
         self.low = int(low)
         self.high = int(high)
+        if self.low >= self.high:
+            raise ValueError(f"IntUniform requires low < high, got ({low}, {high})")
 
     def to_internal(self, value):
         return float(value)
@@ -68,6 +76,8 @@ class Categorical:
 
     def __init__(self, choices):
         self.choices = list(choices)
+        if not self.choices:
+            raise ValueError("Categorical requires at least one choice")
 
     def to_internal(self, value):
         return float(self.choices.index(value))

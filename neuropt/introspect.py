@@ -6,11 +6,9 @@ Detects pretrained weights and generates fine-tuning search spaces.
 
 import copy
 import json
-import math
 import re
 
 from neuropt.search_space import Categorical, IntUniform, LogUniform, Uniform
-
 
 # Activation types we know how to swap
 ACTIVATION_TYPES = None  # lazy import to avoid hard torch dependency
@@ -93,7 +91,7 @@ def _detect_pretrained(model) -> bool:
     have much less variance than this.
     """
     param_ratios = []
-    for name, param in model.named_parameters():
+    for _, param in model.named_parameters():
         if param.dim() < 2:
             continue  # skip biases and 1-d params
         fan_in = param.shape[1]
@@ -118,8 +116,6 @@ def _find_layer_groups(model):
 
     Returns a list of (group_name, [module_paths]) tuples.
     """
-    import torch.nn as nn
-
     groups = []
     for name, mod in model.named_modules():
         # Skip the root module
@@ -188,6 +184,7 @@ def introspect(model, pretrained=None):
         "has_pool": False,
         "pool_paths": [],  # adaptive pool layers
         "pool_type": None,  # "avg" or "max"
+        "pool_dims": set(),  # "1d" / "2d" / "3d" per pool found
         "has_conv": False,
         "has_linear": False,
         "n_params": sum(p.numel() for p in model.parameters()),
@@ -221,10 +218,9 @@ def introspect(model, pretrained=None):
         elif isinstance(mod, _adaptive_pool_types):
             info["has_pool"] = True
             info["pool_paths"].append(name)
-            if "Max" in type(mod).__name__:
-                info["pool_type"] = "max"
-            else:
-                info["pool_type"] = "avg"
+            cls_name = type(mod).__name__
+            info["pool_type"] = "max" if "Max" in cls_name else "avg"
+            info["pool_dims"].add(_pool_dims(cls_name))
         elif isinstance(mod, (nn.Conv1d, nn.Conv2d, nn.Conv3d)):
             info["has_conv"] = True
         elif isinstance(mod, nn.Linear):
@@ -273,7 +269,11 @@ def build_search_space(info):
         space["use_layernorm"] = Categorical([True, False])
 
     if info.get("has_pool"):
-        space["pool_type"] = Categorical(["avg", "max", "attention"])
+        choices = ["avg", "max"]
+        # Attention pooling only handles (B, C, H, W) inputs
+        if info.get("pool_dims", {"2d"}) == {"2d"}:
+            choices.append("attention")
+        space["pool_type"] = Categorical(choices)
 
     if info.get("mha_dropout_paths"):
         space["mha_dropout"] = Uniform(0.0, 0.3)
@@ -419,44 +419,55 @@ def apply_config(model, config, info):
         _apply_freeze_strategy(model, config["freeze_strategy"], info)
 
 
+def _pool_dims(cls_name):
+    """Map an adaptive-pool class name to its dimensionality string."""
+    if "1d" in cls_name:
+        return "1d"
+    if "3d" in cls_name:
+        return "3d"
+    return "2d"
+
+
 def _swap_pool(model, pool_type, info):
     """Swap adaptive pooling layers to avg, max, or attention."""
     import torch.nn as nn
+
+    pool_classes = {
+        ("avg", "1d"): nn.AdaptiveAvgPool1d,
+        ("avg", "2d"): nn.AdaptiveAvgPool2d,
+        ("avg", "3d"): nn.AdaptiveAvgPool3d,
+        ("max", "1d"): nn.AdaptiveMaxPool1d,
+        ("max", "2d"): nn.AdaptiveMaxPool2d,
+        ("max", "3d"): nn.AdaptiveMaxPool3d,
+    }
 
     for path in info["pool_paths"]:
         old = _get_module(model, path)
         # Get the output_size from the existing pool
         output_size = old.output_size
+        dims = _pool_dims(type(old).__name__)
 
-        if pool_type == "avg":
-            # Determine dimensionality from old module type
-            name = type(old).__name__
-            if "1d" in name:
-                new = nn.AdaptiveAvgPool1d(output_size)
-            elif "3d" in name:
-                new = nn.AdaptiveAvgPool3d(output_size)
-            else:
-                new = nn.AdaptiveAvgPool2d(output_size)
-        elif pool_type == "max":
-            name = type(old).__name__
-            if "1d" in name:
-                new = nn.AdaptiveMaxPool1d(output_size)
-            elif "3d" in name:
-                new = nn.AdaptiveMaxPool3d(output_size)
-            else:
-                new = nn.AdaptiveMaxPool2d(output_size)
+        if pool_type in ("avg", "max"):
+            new = pool_classes[(pool_type, dims)](output_size)
         elif pool_type == "attention":
-            # Need to figure out channel count from surrounding context
-            channels = _infer_channels_before_pool(model, path)
-            if channels is not None:
-                new = AttentionPool2d.get_cls()(channels)
-            else:
-                import warnings
+            import warnings
+            if dims != "2d":
                 warnings.warn(
-                    f"Cannot infer channel count for attention pooling at '{path}', "
-                    f"keeping original pooling layer"
+                    f"Attention pooling only supports 2d pools, "
+                    f"keeping original {dims} pooling layer at '{path}'",
+                    stacklevel=2,
                 )
                 continue
+            # Need to figure out channel count from surrounding context
+            channels = _infer_channels_before_pool(model, path)
+            if channels is None:
+                warnings.warn(
+                    f"Cannot infer channel count for attention pooling at '{path}', "
+                    f"keeping original pooling layer",
+                    stacklevel=2,
+                )
+                continue
+            new = AttentionPool2d.get_cls()(channels)
         else:
             continue
         _set_module(model, path, new)
@@ -518,7 +529,7 @@ def _apply_freeze_strategy(model, strategy, info):
 
     elif strategy == "all_but_embeddings":
         # Freeze only embedding layers
-        for name, mod in model.named_modules():
+        for _, mod in model.named_modules():
             if isinstance(mod, nn.Embedding):
                 for param in mod.parameters():
                     param.requires_grad = False
@@ -638,18 +649,18 @@ def build_sklearn_search_space_with_llm(info, backend):
         prompt += f"  {name} = {value!r} ({type(value).__name__})\n"
 
     prompt += (
-        f"\nFor each parameter, provide a search range as JSON. Use this format:\n"
-        f'{{"param_name": {{"type": "int"|"float"|"log_float"|"bool"|"choice", '
-        f'"min": ..., "max": ..., "choices": [...]}}}}\n\n'
-        f"Rules:\n"
-        f"- Only include parameters worth tuning (skip ones that rarely matter)\n"
-        f"- Use \"log_float\" for parameters that span orders of magnitude (like learning_rate, reg_alpha, reg_lambda)\n"
-        f"- Use \"int\" for integer parameters with a range\n"
-        f"- Use \"float\" for bounded float parameters\n"
-        f"- Use \"bool\" for boolean toggles\n"
-        f"- Use \"choice\" for categorical options\n"
-        f"- Choose ranges that a practitioner would actually search over\n\n"
-        f"Respond with ONLY the JSON object. No explanation."
+        "\nFor each parameter, provide a search range as JSON. Use this format:\n"
+        '{"param_name": {"type": "int"|"float"|"log_float"|"bool"|"choice", '
+        '"min": ..., "max": ..., "choices": [...]}}\n\n'
+        "Rules:\n"
+        "- Only include parameters worth tuning (skip ones that rarely matter)\n"
+        "- Use \"log_float\" for params spanning orders of magnitude (learning_rate, reg_alpha, reg_lambda)\n"
+        "- Use \"int\" for integer parameters with a range\n"
+        "- Use \"float\" for bounded float parameters\n"
+        "- Use \"bool\" for boolean toggles\n"
+        "- Use \"choice\" for categorical options\n"
+        "- Choose ranges that a practitioner would actually search over\n\n"
+        "Respond with ONLY the JSON object. No explanation."
     )
 
     response = backend.generate(prompt, max_tokens=1024)

@@ -7,6 +7,7 @@ Defines search_space + train_fn. That's it.
 """
 
 import math
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -87,7 +88,8 @@ class ConfigurableCNN(nn.Module):
 
         for i in range(cfg["n_blocks"]):
             out = min(512, max(8, int(cfg["base_channels"] * cfg["channel_growth"] ** i)))
-            layers = [nn.Conv2d(prev, out, cfg["kernel_size"], padding=cfg["kernel_size"]//2, bias=not cfg["use_batchnorm"])]
+            layers = [nn.Conv2d(prev, out, cfg["kernel_size"], padding=cfg["kernel_size"]//2,
+                                bias=not cfg["use_batchnorm"])]
             if cfg["use_batchnorm"]: layers.append(nn.BatchNorm2d(out))
             layers.append(act())
             if cfg["dropout"] > 0: layers.append(nn.Dropout2d(cfg["dropout"]))
@@ -144,7 +146,8 @@ def train_fn(config):
             loss = crit(model(imgs), tgts)
             if math.isnan(loss.item()):
                 return {"score": float("inf"), "status": "nan", "n_params": n_params,
-                        "train_losses": train_losses, "val_losses": val_losses, "val_accuracies": val_accuracies}
+                        "train_losses": train_losses, "val_losses": val_losses,
+                        "val_accuracies": val_accuracies}
             loss.backward(); opt.step()
             tl += loss.item() * imgs.size(0); tn += imgs.size(0)
         sched.step(); train_losses.append(tl / tn)

@@ -42,7 +42,7 @@ all = [
     "transformers>=4.37", "accelerate>=0.25",
     "matplotlib>=3.7", "pandas>=2.0",
 ]
-dev = ["pytest", "optuna"]
+dev = ["pytest", "optuna", "ruff"]
 
 [project.scripts]
 neuropt = "neuropt.cli:app"
@@ -58,6 +58,21 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["neuropt"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 110
+extend-exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B"]
+ignore = [
+    "E731",  # lambda assignment — used intentionally in tests
+    "E402",  # import not at top of file — lazy imports are deliberate
+    "E701", "E702",  # multiple statements on one line — compact style in examples
+    "B008",  # function call in default argument — standard typer pattern
+    "B905",  # zip without strict= — not needed here
+]
 
 [tool.hatch.build.targets.sdist]
 exclude = ["assets/", "docs/", "site/", "examples/", "data/", "*.jsonl", "benchmark_*.json", ".claude/", ".github/"]
