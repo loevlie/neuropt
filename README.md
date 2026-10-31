@@ -88,6 +88,39 @@ search = ArchSearch(train_fn=train_fn, search_space=search_space, backend="claud
 search.run(max_evals=50)
 ```
 
+### Or let a decision model choose (experimental)
+
+> [!NOTE]
+> **Still evaluating.** `DecisionSearch` works end to end, but it's new and the results below are preliminary: one seed per task. Its defaults may change as we benchmark it further.
+
+`DecisionSearch` uses a [Jev](https://openrouter.ai/docs/guides/community/jev.md)-style **decision model** instead of a generative LLM. A decision model answers multiple-choice questions with calibrated probabilities instead of writing text. neuropt asks it one question per hyperparameter ("which `lr` range is most likely to beat the current best?"), samples candidates from its answers, then asks it to pick among them. The default is the open-weight [H2O-Lightning-4B](https://huggingface.co/h2oai/h2o-lightning-4b), which runs locally through llama.cpp (Apple Silicon included). Any server with the same `/v1/systemone` API also works.
+
+<p align="center">
+  <img src="assets/benchmark_decision_cnn.png" alt="CNN benchmark: H2O-Lightning-4B decision model vs Claude Haiku 4.5, Optuna and random search" width="680">
+</p>
+
+| CNN search · 14 params · 15 evals | Best val loss | Best accuracy | Best after 5 evals |
+|---|:---:|:---:|:---:|
+| **neuropt · H2O-Lightning-4B decision model** | **0.363** | **86.9%** | **0.388** |
+| neuropt · Claude Haiku 4.5 | 0.385 | 85.4% | 0.401 |
+| Optuna TPE | 0.454 | 82.7% | 0.612 |
+| Random search | 0.610 | 76.7% | 0.655 |
+
+On the CNN task its first picks were textbook (residual connections, AdamW, batch norm, max pooling), and it was ahead from the second evaluation. On the 9-parameter XGBoost task it currently trails (0.593 vs 0.415 for Optuna) because it stayed with learning rates that were too low. That's the next thing we're working on.
+
+```python
+from neuropt import DecisionSearch
+
+search = DecisionSearch(train_fn=train_fn, search_space=search_space, backend="decision")
+search.run(max_evals=50)
+```
+
+```bash
+neuropt run train.py --decision-url http://gpu-box:8741
+```
+
+See [Decision Models](https://loevlie.github.io/neuropt/decision-models/) for server setup and how it decides. To reproduce the benchmark: `python examples/benchmark.py --skip-claude --skip-qwen --decision-url http://127.0.0.1:8741`.
+
 ## Documentation
 
 See the [full documentation](https://loevlie.github.io/neuropt/) for:
@@ -97,6 +130,7 @@ See the [full documentation](https://loevlie.github.io/neuropt/) for:
 - [Python API](https://loevlie.github.io/neuropt/api/) — `ArchSearch`, `from_model`, search space types
 - [Model Introspection](https://loevlie.github.io/neuropt/introspection/) — `from_model()` auto-detection, activations, dropout, pooling
 - [Fine-Tuning](https://loevlie.github.io/neuropt/fine-tuning/) — pretrained models, freeze strategies, L2-SP
+- [Decision Models](https://loevlie.github.io/neuropt/decision-models/) — `DecisionSearch` with H2O-Lightning-4B or any Jev-compatible server (experimental)
 - [Examples](https://loevlie.github.io/neuropt/examples/) — CNN search, ResNet tuning
 - [Benchmarks](https://loevlie.github.io/neuropt/benchmarks/) — vs Optuna, random search
 
