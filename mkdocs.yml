@@ -49,6 +49,7 @@ nav:
   - Features:
     - Model Introspection: introspection.md
     - Fine-Tuning: fine-tuning.md
+    - Decision Models: decision-models.md
   - Examples:
     - PyTorch: examples.md
     - XGBoost & sklearn: xgboost.md

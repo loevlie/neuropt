@@ -7,9 +7,12 @@ Bad configs hit 50% accuracy, good ones hit 84% — big gap.
 Usage:
     python examples/benchmark_xgboost_covertype.py
     python examples/benchmark_xgboost_covertype.py --n-evals 30
+    python examples/benchmark_xgboost_covertype.py --skip-claude \
+        --decision-url http://127.0.0.1:8741                # + decision model
 """
 
 import argparse
+import os
 import time
 
 import numpy as np
@@ -17,6 +20,7 @@ from benchmark_utils import (
     header,
     print_convergence,
     print_summary,
+    run_decision,
     run_neuropt,
     run_optuna,
     run_random,
@@ -88,6 +92,14 @@ def train_fn(config):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n-evals", type=int, default=15)
+    parser.add_argument("--skip-claude", action="store_true")
+    parser.add_argument("--skip-optuna", action="store_true")
+    parser.add_argument("--skip-random", action="store_true")
+    parser.add_argument("--decision-url", default=None,
+                        help="Also run DecisionSearch against this /v1/systemone server")
+    parser.add_argument("--seed", type=int, default=42, help="Seed for every method's RNG")
+    parser.add_argument("--log-dir", default="/tmp", help="Where search logs go")
+    parser.add_argument("--out", default="benchmark_xgboost_covertype.json")
     args = parser.parse_args()
 
     print(f"Budget: {args.n_evals} evaluations per method")
@@ -95,22 +107,36 @@ def main():
 
     all_results = {}
 
-    header("neuropt (Claude)")
-    try:
-        all_results["neuropt (Claude)"] = run_neuropt(
-            train_fn, SPACE, "claude", args.n_evals, "/tmp/bench_covtype_claude.jsonl")
-    except Exception as e:
-        print(f"  Skipped: {e}")
+    if not args.skip_claude:
+        header("neuropt (Claude)")
+        try:
+            all_results["neuropt (Claude)"] = run_neuropt(
+                train_fn, SPACE, "claude", args.n_evals,
+                os.path.join(args.log_dir, "bench_covtype_claude.jsonl"), seed=args.seed)
+        except Exception as e:
+            print(f"  Skipped: {e}")
 
-    header("Optuna TPE (n_startup_trials=3)")
-    all_results["Optuna TPE"] = run_optuna(evaluate, SPACE, args.n_evals)
+    if args.decision_url:
+        header("Decision model (DecisionSearch)")
+        try:
+            all_results["Decision model"] = run_decision(
+                train_fn, SPACE, args.n_evals,
+                os.path.join(args.log_dir, f"bench_covtype_decision_s{args.seed}.jsonl"),
+                url=args.decision_url, seed=args.seed)
+        except Exception as e:
+            print(f"  Skipped: {e}")
 
-    header("Random Search")
-    all_results["Random"] = run_random(evaluate, SPACE, args.n_evals)
+    if not args.skip_optuna:
+        header("Optuna TPE (n_startup_trials=3)")
+        all_results["Optuna TPE"] = run_optuna(evaluate, SPACE, args.n_evals, seed=args.seed)
+
+    if not args.skip_random:
+        header("Random Search")
+        all_results["Random"] = run_random(evaluate, SPACE, args.n_evals, seed=args.seed)
 
     print_summary(all_results, args.n_evals)
     print_convergence(all_results, args.n_evals)
-    save_results(all_results, "benchmark_xgboost_covertype.json")
+    save_results(all_results, args.out)
 
 
 if __name__ == "__main__":

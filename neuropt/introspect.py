@@ -5,9 +5,8 @@ Detects pretrained weights and generates fine-tuning search spaces.
 """
 
 import copy
-import json
-import re
 
+from neuropt._parsing import extract_json
 from neuropt.search_space import Categorical, IntUniform, LogUniform, Uniform
 
 # Activation types we know how to swap
@@ -665,19 +664,13 @@ def build_sklearn_search_space_with_llm(info, backend):
 
     response = backend.generate(prompt, max_tokens=1024)
 
-    # Parse response
-    match = re.search(r'\{.*\}', response, re.DOTALL)
-    if not match:
-        return _fallback_sklearn_search_space(info)
-
-    try:
-        ranges = json.loads(match.group())
-    except json.JSONDecodeError:
+    ranges = extract_json(response, "{")
+    if ranges is None:
         return _fallback_sklearn_search_space(info)
 
     space = {}
     for name, spec in ranges.items():
-        if name not in tunable:
+        if name not in tunable or not isinstance(spec, dict):
             continue
         try:
             t = spec.get("type", "float")

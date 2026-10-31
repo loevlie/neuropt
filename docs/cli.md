@@ -8,6 +8,7 @@ Run LLM-guided search on a training script.
 neuropt run train.py
 neuropt run train.py --backend claude
 neuropt run train.py --backend none -n 50 --log results.jsonl
+neuropt run train.py --backend decision --decision-url http://gpu-box:8741
 ```
 
 Your script must define:
@@ -20,7 +21,8 @@ and `minimize = False` if higher scores are better.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--backend` | auto | `auto`, `claude`, `openai`, `qwen`, `none` |
+| `--backend` | auto | `auto`, `claude`, `openai`, `qwen`, `none`, `decision` ([decision model](decision-models.md)) |
+| `--decision-url` | `$NEUROPT_DECISION_URL` or `http://127.0.0.1:8741` | Decision server root (implies `--backend decision`) |
 | `--log` | search.jsonl | Log file path (supports resume) |
 | `-b` / `--batch-size` | 3 | Configs proposed per LLM call |
 | `-n` / `--max-evals` | unlimited | Stop after N experiments |

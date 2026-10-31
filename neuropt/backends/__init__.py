@@ -1,6 +1,7 @@
 """LLM backend auto-detection and loading."""
 
-from neuropt.backends.base import BaseLLMBackend
+from neuropt.backends.base import BaseDecisionBackend, BaseLLMBackend
+from neuropt.backends.decision_backend import DecisionBackend
 
 
 def _make_claude():
@@ -31,10 +32,14 @@ def get_default_backend():
 
     Priority: Claude API -> OpenAI API -> local Qwen -> None (random fallback).
     """
-    for factory in _REGISTRY.values():
+    for name, factory in _REGISTRY.items():
         try:
             backend = factory()
             if backend.is_available():
+                if name == "qwen":
+                    print("No ANTHROPIC_API_KEY or OPENAI_API_KEY found: using local "
+                          "Qwen2.5-1.5B on CPU (about 3 GB download on first use). "
+                          "Pass backend='none' for plain random search.")
                 return backend
         except Exception:
             pass
@@ -45,11 +50,16 @@ def get_backend_by_name(name):
     """Get a specific backend by name."""
     if name == "none":
         return None
+    if name == "decision":
+        return DecisionBackend()
     factory = _REGISTRY.get(name)
     if factory is None:
-        valid = ", ".join(f"'{k}'" for k in _REGISTRY) + ", or 'none'"
+        valid = ", ".join(f"'{k}'" for k in _REGISTRY) + ", 'decision', or 'none'"
         raise ValueError(f"Unknown backend: {name!r}. Use {valid}.")
     return factory()
 
 
-__all__ = ["BaseLLMBackend", "get_default_backend", "get_backend_by_name"]
+__all__ = [
+    "BaseLLMBackend", "BaseDecisionBackend", "DecisionBackend",
+    "get_default_backend", "get_backend_by_name",
+]

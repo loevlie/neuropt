@@ -52,13 +52,14 @@ search = ArchSearch.from_model(model, train_fn, pretrained=True)
 |-----------|---------|-------------|
 | `train_fn` | required | `config dict → result dict` |
 | `search_space` | required | Dict of param names to ranges/choices |
-| `backend` | `"auto"` | `"auto"`, `"claude"`, `"openai"`, `"qwen"`, `"none"` |
+| `backend` | `"auto"` | `"auto"`, `"claude"`, `"openai"`, `"qwen"`, `"none"`, or a backend instance |
 | `log_path` | `"search.jsonl"` | JSONL log file |
 | `batch_size` | `3` | Configs per LLM call |
 | `device` | `None` | Injected as `config["device"]` |
 | `timeout` | `600` | Max seconds per experiment |
 | `ml_context` | generic | Domain knowledge for the LLM |
 | `minimize` | `True` | If `True`, lower scores are better (loss). Set `False` for accuracy/AUROC |
+| `seed` | `42` | Seed for the random configs the search draws (random fallback, decision-model sampling) |
 
 ### `run(max_evals=None)`
 
@@ -74,6 +75,30 @@ After `run()` completes:
 - `search.total_experiments` — total experiments run
 - `search.llm_success` — LLM calls that produced valid configs
 - `search.llm_fallback` — LLM calls that fell back to random
+
+## DecisionSearch
+
+*Experimental: still being evaluated.* Same interface as `ArchSearch`, but a [decision model](decision-models.md) (a Jev-style model that answers multiple-choice questions with probabilities) picks the configs.
+
+```python
+from neuropt import DecisionSearch
+
+search = DecisionSearch(train_fn, search_space, backend="decision")
+search.run(max_evals=50)
+```
+
+Extra parameters on top of `ArchSearch`'s:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `backend` | `"auto"` | `"auto"` (server if reachable, else random), `"decision"`, `"none"`, or a `BaseDecisionBackend` |
+| `n_bins` | `8` | Ranges each numeric parameter is split into |
+| `n_candidates` | `12` | Configs sampled from the answers before the joint pick |
+| `explore` | `0.15` | Uniform probability mixed into each answer when sampling |
+| `rerank` | `True` | Ask the model to pick jointly among the candidates |
+| `max_curve_points` | `20` | Long curves (e.g. 500 boosting rounds) are shown at this many evenly spaced epochs; every question re-reads the state |
+
+`search.llm_success` / `search.llm_fallback` count decision-model iterations that succeeded or fell back to random.
 
 ## train_fn contract
 
