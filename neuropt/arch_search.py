@@ -8,11 +8,12 @@ import json
 import math
 import os
 import random
-import re
 import signal
 import sys
+import threading
 import time
 
+from neuropt._parsing import extract_json
 from neuropt.search_space import Categorical, IntUniform, LogUniform, Uniform
 
 DEFAULT_ML_CONTEXT = """\
@@ -56,6 +57,12 @@ class ArchSearch:
 
         search.run(max_evals=50)
     """
+
+    # Labels used in console output; DecisionSearch overrides them.
+    _title = "LLM-Guided Search"
+    _decider_label = "LLM"
+    # Show at most this many epochs per curve in the state (None = all).
+    _max_curve_points = None
 
     @classmethod
     def from_model(cls, model, train_fn, backend="auto", pretrained=None, **kwargs):
@@ -145,9 +152,9 @@ class ArchSearch:
         )
 
         info = introspect_sklearn(model)
-        resolved_backend = _resolve_backend(backend)
+        resolved_backend = cls._resolve_backend_for(backend)
 
-        if resolved_backend is not None:
+        if resolved_backend is not None and hasattr(resolved_backend, "generate"):
             print(f"Asking LLM for search ranges for {info['model_type']}...")
             search_space = build_sklearn_search_space_with_llm(info, resolved_backend)
         else:
@@ -164,7 +171,7 @@ class ArchSearch:
         return cls(
             train_fn=wrapped_fn,
             search_space=search_space,
-            backend=backend,
+            backend=resolved_backend,
             ml_context=ml_context,
             **kwargs,
         )
@@ -180,6 +187,7 @@ class ArchSearch:
         timeout: int = 600,
         ml_context: str | None = None,
         minimize: bool = True,
+        seed: int | None = None,
     ):
         """
         Args:
@@ -198,11 +206,16 @@ class ArchSearch:
             log_path: JSONL log file path (supports resume).
             batch_size: Configs proposed per LLM call.
             device: Injected into config as ``config["device"]`` if set.
-            timeout: Max seconds per experiment.
+            timeout: Max seconds per experiment. Enforced with SIGALRM, so it
+                only applies when ``run()`` is called from the main thread
+                on a POSIX system, and it can't interrupt a long call into a
+                C extension until that call returns to Python.
             ml_context: Domain knowledge for the LLM (appended to default
                 prompt). Tell it about your dataset, architecture, etc.
             minimize: If True (default), lower scores are better (loss).
                 If False, higher scores are better (accuracy, AUROC).
+            seed: Seed for the random configs this search draws (random
+                fallback, decision-model sampling). Default 42.
         """
         self.train_fn = train_fn
         self.search_space = _normalize_search_space(search_space)
@@ -212,9 +225,11 @@ class ArchSearch:
         self.log_path = log_path
         self.ml_context = ml_context or DEFAULT_ML_CONTEXT
         self.minimize = minimize
+        self.seed = 42 if seed is None else seed
 
-        self._backend = _resolve_backend(backend)
+        self._backend = self._resolve_backend_for(backend)
         self._shutdown = False
+        self._warned_no_timeout = False
 
         # State
         self.best_score = float("inf") if minimize else float("-inf")
@@ -223,6 +238,19 @@ class ArchSearch:
         self.total_experiments = 0
         self.llm_success = 0
         self.llm_fallback = 0
+
+    @classmethod
+    def _resolve_backend_for(cls, backend):
+        """Turn the ``backend`` argument into a backend instance (or None)."""
+        resolved = _resolve_backend(backend)
+        from neuropt.backends.base import BaseDecisionBackend
+        if isinstance(resolved, BaseDecisionBackend):
+            raise TypeError(
+                f"{type(resolved).__name__} is a decision model: it answers multiple-choice "
+                "questions and can't write configs. Use neuropt.DecisionSearch with it instead "
+                "of ArchSearch."
+            )
+        return resolved
 
     def run(self, max_evals: int | None = None, resume: bool = True):
         """Run the search loop.
@@ -234,8 +262,14 @@ class ArchSearch:
             resume: If True (default), continue from existing log file.
                 If False, start fresh by clearing any existing log.
         """
-        self._setup_signals()
+        self._shutdown = False
+        previous_handlers = self._setup_signals()
+        try:
+            self._run_loop(max_evals, resume)
+        finally:
+            self._restore_signals(previous_handlers)
 
+    def _run_loop(self, max_evals, resume):
         if not resume and os.path.exists(self.log_path):
             os.remove(self.log_path)
 
@@ -255,7 +289,7 @@ class ArchSearch:
 
         backend_name = self._backend.name if self._backend else "None (random)"
         print("=" * 60)
-        print("LLM-Guided Search")
+        print(self._title)
         print(f"  Backend: {backend_name}")
         print(f"  Device: {self.device or 'auto'}")
         print(f"  Batch size: {self.batch_size}")
@@ -264,14 +298,14 @@ class ArchSearch:
             print(f"  Max evals: {max_evals}")
         if self.total_experiments:
             print(f"  Resuming from {self.total_experiments} experiments")
-            print(f"  Best so far: loss={self.best_score:.4f} acc={self.best_accuracy:.4f}")
+            print(f"  Best so far: score={self.best_score:.4f} acc={self.best_accuracy:.4f}")
         if not max_evals:
             print("  Ctrl+C to stop")
         print("=" * 60)
         print()
         evals_at_start = self.total_experiments
 
-        rng = random.Random(42 + self.total_experiments)
+        rng = random.Random(self.seed + self.total_experiments)
 
         while not self._shutdown:
             if max_evals and (self.total_experiments - evals_at_start) >= max_evals:
@@ -325,7 +359,8 @@ class ArchSearch:
             print(f"  iter {iteration} done in {time.time() - iter_start:.1f}s | "
                   f"best: {self.best_score:.4f} | total: {self.total_experiments}")
             if self._backend:
-                print(f"  llm: {self.llm_success} ok, {self.llm_fallback} fallback")
+                print(f"  {self._decider_label.lower()}: {self.llm_success} ok, "
+                      f"{self.llm_fallback} fallback")
             print()
             iteration += 1
 
@@ -347,6 +382,10 @@ class ArchSearch:
             try:
                 response = self._backend.generate(prompt, max_tokens=2048)
                 configs = self._parse_response(response)
+                if configs is not None:
+                    # Top up a short (but valid) answer with random configs
+                    while len(configs) < self.batch_size:
+                        configs.append(_random_config(self.search_space, rng))
 
                 if configs is None:
                     self.llm_fallback += 1
@@ -453,19 +492,24 @@ class ArchSearch:
         old_handler = None
         start = time.time()
         try:
-            try:
-                old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
-                signal.alarm(self.timeout)
-            except (AttributeError, OSError):
-                pass
+            if _in_main_thread():
+                try:
+                    old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
+                    signal.alarm(self.timeout)
+                except (AttributeError, OSError, ValueError):
+                    pass
+            elif not self._warned_no_timeout:
+                self._warned_no_timeout = True
+                print("  [timeout disabled: run() is not on the main thread]")
 
             raw = self.train_fn(cfg)
             elapsed = time.time() - start
 
-            try:
-                signal.alarm(0)
-            except (AttributeError, OSError):
-                pass
+            if old_handler is not None:
+                try:
+                    signal.alarm(0)
+                except (AttributeError, OSError):
+                    pass
 
             if isinstance(raw, (int, float)):
                 raw = {"score": float(raw)}
@@ -507,16 +551,24 @@ class ArchSearch:
                     "elapsed": time.time() - start,
                     "status": "error", "error": f"{type(e).__name__}: {e}"}
         finally:
-            try:
-                signal.alarm(0)
-                if old_handler is not None:
+            if old_handler is not None:
+                try:
+                    signal.alarm(0)
                     signal.signal(signal.SIGALRM, old_handler)
-            except (AttributeError, OSError):
-                pass
+                except (AttributeError, OSError, ValueError):
+                    pass
 
     # ── Prompt building ────────────────────────────────────────────────────
 
     def _build_prompt(self, history):
+        return self._build_state(history) + "\n" + self._task_text()
+
+    def _build_state(self, history):
+        """Render everything the model should know: context, space, history, curves.
+
+        Shared by the LLM prompt and the decision-model state, so both see the
+        same evidence.
+        """
         parts = [self.ml_context.strip(), ""]
 
         # Search space
@@ -554,7 +606,7 @@ class ArchSearch:
             for row in recent:
                 cfg = row.get("config", {})
                 score = _get_score(row)
-                score_s = f"{score:.4f}" if score is not None and score != float("inf") else "inf"
+                score_s = "-" if score is None else f"{score:.4f}"
                 vals = [str(row.get("id", ""))]
                 for k in cfg_keys:
                     v = cfg.get(k, "")
@@ -586,12 +638,12 @@ class ArchSearch:
                         cfg = row["config"]
                         label = ", ".join(f"{k}={_fmt(cfg.get(k))}"
                                          for k in list(cfg.keys())[:5])
-                        parts.append(f"{label}:")
+                        parts.append(f"#{row.get('id', '?')} {label}:")
                         # Gather all curves for this row
                         row_curves = {k: _get_curve(row, k) for k in curve_keys}
                         row_curves = {k: v for k, v in row_curves.items() if v}
                         max_epochs = max((len(v) for v in row_curves.values()), default=0)
-                        for e in range(max_epochs):
+                        for e in _curve_indices(max_epochs, self._max_curve_points):
                             line = f"  ep{e+1}:"
                             for k, v in row_curves.items():
                                 if e < len(v):
@@ -607,21 +659,25 @@ class ArchSearch:
                 tl = _get_curve(row, "train_losses")
                 vl = _get_curve(row, "val_losses")
                 if tl and vl and len(tl) >= 2 and len(vl) >= 2:
-                    gap = vl[-1] - tl[-1]
-                    if tl[-1] < tl[0] and vl[-1] > min(vl) and gap > 0.3:
-                        signals.append(f"- OVERFITTING: {_short_config(row['config'])} "
-                                       f"(gap={gap:.2f})")
-                    elif tl[-1] > 1.5:
-                        signals.append(f"- UNDERFITTING: {_short_config(row['config'])} "
-                                       f"(train={tl[-1]:.3f})")
+                    signal_name = _fit_signal(tl, vl)
+                    if signal_name == "overfitting":
+                        signals.append(f"- OVERFITTING: #{row.get('id', '?')} "
+                                       f"{_short_config(row['config'])} "
+                                       f"(gap={vl[-1] - tl[-1]:.3g})")
+                    elif signal_name == "underfitting":
+                        signals.append(f"- UNDERFITTING: #{row.get('id', '?')} "
+                                       f"{_short_config(row['config'])} "
+                                       f"(train {tl[0]:.3g} -> {tl[-1]:.3g})")
             if signals:
                 parts.append("## Signals\n")
                 parts.extend(signals)
                 parts.append("")
 
-        # Task
-        parts.append("## Task\n")
-        parts.append(
+        return "\n".join(parts)
+
+    def _task_text(self):
+        return "\n".join([
+            "## Task\n",
             f"Propose exactly {self.batch_size} configs to try next.\n\n"
             "Rules:\n"
             "- Every config must be DIFFERENT from the history AND from each other\n"
@@ -632,23 +688,20 @@ class ArchSearch:
             "- If the best configs are clustering, try something outside that cluster\n\n"
             "Respond with ONLY a JSON array of config objects. "
             "No explanation, no markdown fences."
-        )
-        return "\n".join(parts)
+        ])
 
     # ── Response parsing ───────────────────────────────────────────────────
 
     def _parse_response(self, response):
-        """Parse LLM JSON into validated configs. Returns None on any failure."""
-        match = re.search(r'\[.*\]', response, re.DOTALL)
-        if not match:
-            return None
-        try:
-            configs = json.loads(match.group())
-        except json.JSONDecodeError:
-            return None
+        """Parse LLM JSON into validated configs.
 
-        if not isinstance(configs, list) or len(configs) != self.batch_size:
+        Returns up to ``batch_size`` configs (extras are dropped), or None if
+        there is no JSON array, it is empty, or any config is invalid.
+        """
+        configs = extract_json(response, "[")
+        if not configs:
             return None
+        configs = configs[:self.batch_size]
 
         validated = []
         for cfg in configs:
@@ -666,14 +719,34 @@ class ArchSearch:
         return score > self.best_score
 
     def _setup_signals(self):
+        """Install Ctrl+C / SIGTERM handlers; return the previous ones.
+
+        Signal handlers can only be set from the main thread, so elsewhere this
+        is a no-op (Ctrl+C then interrupts the way it normally would).
+        """
+        if not _in_main_thread():
+            return None
+
         def handler(signum, frame):
             if self._shutdown:
                 print("\nForce exit.")
                 sys.exit(1)
             print("\nStopping after current experiment...")
             self._shutdown = True
-        signal.signal(signal.SIGINT, handler)
-        signal.signal(signal.SIGTERM, handler)
+
+        previous = {}
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            previous[sig] = signal.getsignal(sig)
+            signal.signal(sig, handler)
+        return previous
+
+    @staticmethod
+    def _restore_signals(previous):
+        if not previous:
+            return
+        for sig, old in previous.items():
+            if old is not None:
+                signal.signal(sig, old)
 
     def _print_summary(self, iteration):
         print("\n" + "=" * 60)
@@ -685,7 +758,7 @@ class ArchSearch:
         if self.best_config:
             print(f"  Best config: {json.dumps(self.best_config, default=str)}")
         if self._backend:
-            print(f"  LLM: {self.llm_success} ok, {self.llm_fallback} fallback")
+            print(f"  {self._decider_label}: {self.llm_success} ok, {self.llm_fallback} fallback")
             tokens_in = self._backend.total_input_tokens
             tokens_out = self._backend.total_output_tokens
             if tokens_in or tokens_out:
@@ -706,13 +779,56 @@ def _alarm_handler(signum, frame):
     raise _Timeout()
 
 
+def _curve_indices(n, max_points):
+    """Epoch indices to show: all of them, or ``max_points`` evenly spaced
+    ones that always include the first and last epoch."""
+    if max_points is None or n <= max_points:
+        return range(n)
+    if max_points < 2:
+        return [n - 1]
+    return sorted({round(i * (n - 1) / (max_points - 1)) for i in range(max_points)})
+
+
+def _in_main_thread():
+    return threading.current_thread() is threading.main_thread()
+
+
+def _fit_signal(train_losses, val_losses):
+    """Classify a pair of loss curves as "overfitting", "underfitting" or None.
+
+    Uses relative thresholds so it works for any loss scale (cross-entropy,
+    MSE, ...): overfitting = train still falling while val has climbed more
+    than 5% off its minimum and sits well above train; underfitting = train
+    loss improved by less than 10% over the run.
+    """
+    t0, t_end, v_end = train_losses[0], train_losses[-1], val_losses[-1]
+    v_min = min(val_losses)
+    gap = v_end - t_end
+    if t_end < t0 and v_end > v_min + 0.05 * abs(v_min) and gap > 0.2 * abs(v_end):
+        return "overfitting"
+    if t0 > 0 and t_end > 0.9 * t0:
+        return "underfitting"
+    return None
+
+
 class _JSONLLogger:
     def __init__(self, path):
         self.path = path
         self._counter = 0
         if os.path.exists(path):
-            with open(path) as f:
-                self._counter = sum(1 for _ in f)
+            self._counter = len(self.load_history(warn=False))
+            # A crash mid-write can leave a partial last line with no newline;
+            # start a fresh line so the next row isn't glued onto it.
+            with open(path, "rb") as f:
+                f.seek(0, os.SEEK_END)
+                if f.tell() > 0:
+                    f.seek(-1, os.SEEK_END)
+                    needs_newline = f.read(1) != b"\n"
+                else:
+                    needs_newline = False
+            if needs_newline:
+                with open(path, "a") as f:
+                    f.write("\n")
 
     def log(self, iteration, cfg, result, source):
         self._counter += 1
@@ -733,15 +849,28 @@ class _JSONLLogger:
             f.write(json.dumps(entry, default=str) + "\n")
             f.flush()
 
-    def load_history(self):
+    def load_history(self, warn=True):
+        """Read all rows, skipping lines that aren't valid JSON objects."""
         if not os.path.exists(self.path):
             return []
         rows = []
+        skipped = 0
         with open(self.path) as f:
             for line in f:
                 line = line.strip()
-                if line:
-                    rows.append(json.loads(line))
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    skipped += 1
+                    continue
+                if isinstance(row, dict):
+                    rows.append(row)
+                else:
+                    skipped += 1
+        if skipped and warn:
+            print(f"  [skipped {skipped} unreadable line(s) in {self.path}]")
         return rows
 
 
@@ -878,9 +1007,10 @@ def _validate_config(cfg, search_space):
                     val = val.lower() in ("true", "1", "yes")
                 else:
                     val = bool(val)
-            if val not in dim.choices:
+            choice = _match_choice(val, dim.choices)
+            if choice is _NO_MATCH:
                 return None
-            cleaned[name] = val
+            cleaned[name] = choice
         elif isinstance(dim, IntUniform):
             try:
                 val = int(round(float(val)))
@@ -900,6 +1030,31 @@ def _validate_config(cfg, search_space):
     return cleaned
 
 
+_NO_MATCH = object()
+
+
+def _match_choice(val, choices):
+    """Return the element of ``choices`` that ``val`` refers to.
+
+    Returns the choice object itself (so ``64.0`` for choices ``[32, 64]``
+    comes back as the int ``64``). Bools only match bools, so ``True`` is not
+    accepted for ``[0, 1]``. (For ``[True, False]`` the caller coerces JSON
+    values like ``"true"`` or ``1`` to a bool first.)
+    """
+    for c in choices:
+        if type(c) is type(val) and c == val:
+            return c
+    for c in choices:
+        if isinstance(c, bool) or isinstance(val, bool):
+            continue
+        try:
+            if c == val:
+                return c
+        except Exception:
+            continue
+    return _NO_MATCH
+
+
 def _fmt(v):
     if isinstance(v, float):
         if v < 0.01 or v > 1000:
@@ -915,8 +1070,8 @@ def _config_key(cfg):
         if k in ("device", "model"):
             continue
         v = cfg[k]
-        if isinstance(v, float):
-            v = round(v, 6)
+        if isinstance(v, float) and math.isfinite(v):
+            v = float(f"{v:.6g}")  # 6 significant figures, not 6 decimal places
         parts.append((k, v))
     return tuple(parts)
 

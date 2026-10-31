@@ -28,9 +28,11 @@ class OpenAIBackend(BaseLLMBackend):
 
     def generate(self, prompt: str, max_tokens: int = 1024) -> str:
         client = self._get_client()
+        # max_completion_tokens works for every chat model; reasoning models
+        # (o-series, gpt-5) reject the older max_tokens parameter.
         response = client.chat.completions.create(
             model=self._model,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
         if response.usage is not None:

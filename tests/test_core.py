@@ -873,3 +873,294 @@ class TestCLIResults:
         assert result.exit_code == 0
         # Highest score listed first
         assert result.output.index("score=0.9000") < result.output.index("score=0.6000")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  REGRESSIONS FROM CODE REVIEW
+# ══════════════════════════════════════════════════════════════════════════
+
+class _CannedLLM(BaseLLMBackend):
+    def __init__(self, responses):
+        super().__init__()
+        self.responses = list(responses)
+
+    def generate(self, prompt, max_tokens=1024):
+        self.total_input_tokens += 10
+        return self.responses.pop(0) if len(self.responses) > 1 else self.responses[0]
+
+    def is_available(self):
+        return True
+
+
+class TestRunLifecycle:
+    def test_run_again_after_interrupt(self, tmp_log):
+        search = ArchSearch(lambda cfg: {"score": cfg["x"]}, {"x": (1.0, 10.0)},
+                            backend="none", log_path=tmp_log)
+        search._shutdown = True  # as if Ctrl+C stopped a previous run()
+        search.run(max_evals=2)
+        assert search.total_experiments == 2
+
+    def test_signal_handlers_restored(self, tmp_log):
+        import signal
+        before = signal.getsignal(signal.SIGINT)
+        search = ArchSearch(lambda cfg: {"score": cfg["x"]}, {"x": (1.0, 10.0)},
+                            backend="none", log_path=tmp_log)
+        search.run(max_evals=1)
+        assert signal.getsignal(signal.SIGINT) is before
+
+    def test_run_from_worker_thread(self, tmp_log, capsys):
+        import threading
+        search = ArchSearch(lambda cfg: {"score": cfg["x"]}, {"x": (1.0, 10.0)},
+                            backend="none", log_path=tmp_log)
+        errors = []
+
+        def target():
+            try:
+                search.run(max_evals=2)
+            except Exception as e:  # pragma: no cover - the bug this guards against
+                errors.append(e)
+
+        t = threading.Thread(target=target)
+        t.start()
+        t.join()
+        assert not errors
+        assert search.total_experiments == 2
+        rows = [json.loads(line) for line in open(tmp_log)]
+        assert all(r["status"] == "ok" for r in rows)
+        assert "timeout disabled" in capsys.readouterr().out
+
+
+class TestTruncatedLogResume:
+    def test_partial_last_line_is_skipped(self, tmp_log, capsys):
+        with open(tmp_log, "w") as f:
+            f.write(json.dumps({"id": 1, "config": {"x": 5.0}, "score": 5.0, "status": "ok"}) + "\n")
+            f.write(json.dumps({"id": 2, "config": {"x": 3.0}, "score": 3.0, "status": "ok"}) + "\n")
+            f.write('{"id": 3, "config": {"x": 2.0}, "sco')  # crash mid-write
+        search = ArchSearch(lambda cfg: {"score": cfg["x"]}, {"x": (1.0, 10.0)},
+                            backend="none", log_path=tmp_log)
+        search.run(max_evals=2)
+        assert search.total_experiments == 4
+        assert search.best_score <= 3.0
+        out = capsys.readouterr().out
+        assert "skipped 1 unreadable line" in out
+        # The new rows start on their own line and parse cleanly
+        lines = open(tmp_log).read().splitlines()
+        parsed = []
+        for line in lines:
+            try:
+                parsed.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+        assert len(parsed) == 4
+        assert [r["id"] for r in parsed] == [1, 2, 3, 4]
+
+
+class TestClaudePricing:
+    @pytest.mark.parametrize("model, prices", [
+        ("claude-opus-4-6", (5.0, 25.0)),
+        ("claude-opus-5-5", (4.0, 20.0)),
+        ("claude-opus-5", (5.0, 25.0)),
+        ("claude-sonnet-4-5-20250929", (3.0, 15.0)),
+        ("claude-sonnet-5-5", (2.0, 10.0)),
+        ("claude-haiku-5-5", (0.10, 0.50)),
+        ("claude-haiku-4-5-20251001", (1.0, 5.0)),
+        ("claude-fable-5-1", (10.0, 50.0)),
+    ])
+    def test_prices(self, model, prices):
+        from neuropt.backends.claude_backend import ClaudeBackend
+        b = ClaudeBackend(model=model)
+        b.total_input_tokens = 1_000_000
+        b.total_output_tokens = 1_000_000
+        assert b.total_cost == pytest.approx(sum(prices))
+
+    def test_unversioned_family_is_unknown(self):
+        from neuropt.backends.claude_backend import ClaudeBackend
+        b = ClaudeBackend(model="claude-opus")
+        b.total_input_tokens = 1000
+        assert b.total_cost is None
+
+    def test_generate_skips_non_text_blocks(self):
+        from types import SimpleNamespace
+
+        from neuropt.backends.claude_backend import ClaudeBackend
+        message = SimpleNamespace(
+            content=[SimpleNamespace(type="thinking", thinking=""),
+                     SimpleNamespace(type="text", text="[1]")],
+            usage=SimpleNamespace(input_tokens=3, output_tokens=4))
+        client = SimpleNamespace(messages=SimpleNamespace(create=lambda **kw: message))
+        b = ClaudeBackend()
+        b._client = client
+        assert b.generate("hi") == "[1]"
+
+
+class TestOpenAIParams:
+    def test_uses_max_completion_tokens(self):
+        from types import SimpleNamespace
+
+        from neuropt.backends.openai_backend import OpenAIBackend
+        seen = {}
+
+        def create(**kwargs):
+            seen.update(kwargs)
+            return SimpleNamespace(
+                usage=None,
+                choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))])
+
+        b = OpenAIBackend(model="gpt-5")
+        b._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        b.generate("hi", max_tokens=77)
+        assert seen["max_completion_tokens"] == 77
+        assert "max_tokens" not in seen
+
+
+class TestConfigKey:
+    def test_tiny_log_scale_values_stay_distinct(self):
+        from neuropt.arch_search import _config_key
+        assert _config_key({"wd": 1e-7}) != _config_key({"wd": 5e-7})
+        assert _config_key({"wd": 1.2e-5}) != _config_key({"wd": 1.24e-5})
+
+    def test_float_noise_still_matches(self):
+        from neuropt.arch_search import _config_key
+        assert _config_key({"lr": 0.0123}) == _config_key({"lr": 0.012299999999999997})
+
+
+class TestResponseParsing:
+    def _search(self, tmp_log, batch_size=3):
+        return ArchSearch(lambda cfg: {"score": cfg["x"]}, {"x": (1.0, 10.0)},
+                          backend="none", log_path=tmp_log, batch_size=batch_size)
+
+    def test_trailing_prose_with_brackets(self, tmp_log):
+        search = self._search(tmp_log)
+        response = ('Here you go: [{"x": 2}, {"x": 3}, {"x": 4}]\n'
+                    "Note: I varied [x] only.")
+        configs = search._parse_response(response)
+        assert [c["x"] for c in configs] == [2.0, 3.0, 4.0]
+
+    def test_extra_configs_truncated(self, tmp_log):
+        search = self._search(tmp_log, batch_size=2)
+        configs = search._parse_response('[{"x": 2}, {"x": 3}, {"x": 4}]')
+        assert [c["x"] for c in configs] == [2.0, 3.0]
+
+    def test_short_answer_topped_up(self, tmp_log):
+        import random as _random
+        search = ArchSearch(lambda cfg: {"score": cfg["x"]}, {"x": (1.0, 10.0)},
+                            backend=_CannedLLM(['[{"x": 2}]']), log_path=tmp_log)
+        configs, source = search._get_configs([], _random.Random(0))
+        assert source == "llm"
+        assert len(configs) == 3
+        assert configs[0]["x"] == 2.0
+
+    def test_no_array_returns_none(self, tmp_log):
+        assert self._search(tmp_log)._parse_response("no idea, sorry") is None
+        assert self._search(tmp_log)._parse_response("[]") is None
+
+    def test_sklearn_ranges_with_surrounding_prose(self):
+        from neuropt.introspect import build_sklearn_search_space_with_llm
+        info = {"model_type": "M", "tunable_params": {"max_depth": 5, "alpha": 0.1}}
+        backend = _CannedLLM(['Sure! {"max_depth": {"type": "int", "min": 2, "max": 9}, '
+                              '"alpha": "oops"} Hope that {helps}.'])
+        space = build_sklearn_search_space_with_llm(info, backend)
+        assert isinstance(space["max_depth"], IntUniform)
+        assert "alpha" not in space  # malformed spec skipped instead of crashing
+
+
+class TestCategoricalValidation:
+    def test_numeric_choice_returns_choice_object(self):
+        from neuropt.arch_search import _validate_config
+        cleaned = _validate_config({"bs": 64.0}, {"bs": Categorical([32, 64, 128])})
+        assert cleaned == {"bs": 64}
+        assert type(cleaned["bs"]) is int
+
+    def test_bool_not_accepted_for_int_choices(self):
+        from neuropt.arch_search import _validate_config
+        assert _validate_config({"flag": True}, {"flag": Categorical([0, 1])}) is None
+
+    def test_bool_choices_still_coerce(self):
+        from neuropt.arch_search import _validate_config
+        space = {"bn": Categorical([True, False])}
+        assert _validate_config({"bn": "true"}, space) == {"bn": True}
+        assert _validate_config({"bn": 0}, space) == {"bn": False}
+
+
+class TestSklearnBackendResolvedOnce:
+    def test_range_tokens_reach_search_backend(self, tmp_log, monkeypatch):
+        pytest.importorskip("sklearn")
+        from sklearn.ensemble import RandomForestClassifier
+
+        import neuropt.backends as backends
+        made = []
+
+        def factory():
+            made.append(_CannedLLM(['{"max_depth": {"type": "int", "min": 2, "max": 9}}']))
+            return made[-1]
+
+        monkeypatch.setitem(backends._REGISTRY, "claude", factory)
+        search = ArchSearch.from_model(RandomForestClassifier(n_estimators=5),
+                                       lambda cfg: {"score": 0.5},
+                                       backend="claude", log_path=tmp_log)
+        assert len(made) == 1  # one backend instance, not one per resolution
+        assert search._backend is made[0]
+        assert search._backend.total_input_tokens == 10  # the range request is counted
+
+
+class TestPromptDetails:
+    def _search(self, tmp_log, **kw):
+        return ArchSearch(lambda cfg: {"score": 0}, {"x": (1.0, 10.0)},
+                          backend="none", log_path=tmp_log, **kw)
+
+    def test_curve_labels_include_run_id(self, tmp_log):
+        history = [{"id": 7, "status": "ok", "score": 1.0, "config": {"x": 2.0},
+                    "curves": {"train_losses": [1.0, 0.5], "val_losses": [1.1, 0.8]}}]
+        assert "#7 x=2.000:" in self._search(tmp_log)._build_prompt(history)
+
+    def test_missing_score_rendered_as_dash(self, tmp_log):
+        history = [{"id": 1, "status": "error", "config": {"x": 2.0}}]
+        prompt = self._search(tmp_log)._build_prompt(history)
+        assert "| 1 | 2 | - |" in prompt
+
+    def test_resume_banner_says_score(self, tmp_log, capsys):
+        with open(tmp_log, "w") as f:
+            f.write(json.dumps({"id": 1, "config": {"x": 5.0}, "score": 0.9, "status": "ok"}) + "\n")
+        self._search(tmp_log, minimize=False).run(max_evals=1)
+        out = capsys.readouterr().out
+        assert "Best so far: score=" in out
+        assert "loss=" not in out
+
+
+class TestFitSignal:
+    def test_overfitting_on_mse_scale(self):
+        from neuropt.arch_search import _fit_signal
+        assert _fit_signal([100.0, 60.0, 30.0], [110.0, 80.0, 95.0]) == "overfitting"
+
+    def test_overfitting_on_small_scale(self):
+        from neuropt.arch_search import _fit_signal
+        assert _fit_signal([0.10, 0.05, 0.02], [0.11, 0.06, 0.08]) == "overfitting"
+
+    def test_underfitting_is_relative(self):
+        from neuropt.arch_search import _fit_signal
+        assert _fit_signal([0.30, 0.29, 0.285], [0.31, 0.30, 0.29]) == "underfitting"
+        assert _fit_signal([3.0, 1.0, 0.6], [3.1, 1.1, 0.7]) is None
+
+
+class TestAutoQwenNotice:
+    def test_notice_when_falling_back_to_qwen(self, monkeypatch, capsys):
+        import neuropt.backends as backends
+
+        class Avail(BaseLLMBackend):
+            def __init__(self, ok):
+                super().__init__()
+                self.ok = ok
+
+            def generate(self, prompt, max_tokens=1024):
+                return ""
+
+            def is_available(self):
+                return self.ok
+
+        monkeypatch.setattr(backends, "_REGISTRY", {
+            "claude": lambda: Avail(False),
+            "openai": lambda: Avail(False),
+            "qwen": lambda: Avail(True),
+        })
+        assert backends.get_default_backend() is not None
+        assert "Qwen2.5-1.5B" in capsys.readouterr().out

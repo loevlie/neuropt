@@ -47,22 +47,40 @@ def summarize(losses, accs, wall_time, **extra):
     }
 
 
-def run_neuropt(train_fn, space, backend_name, n_evals, log_path, **kwargs):
-    """Run a neuropt ArchSearch and summarize its log."""
+def run_neuropt(train_fn, space, backend_name, n_evals, log_path, search_cls=None, **kwargs):
+    """Run a neuropt search (ArchSearch by default) and summarize its log.
+
+    Raises RuntimeError if the requested backend isn't usable, so a missing
+    API key or server is reported as skipped instead of silently running
+    the random fallback under the backend's name.
+    """
     from neuropt import ArchSearch
 
     if os.path.exists(log_path):
         os.remove(log_path)
 
-    search = ArchSearch(train_fn=train_fn, search_space=space,
-                        backend=backend_name, log_path=log_path,
-                        batch_size=3, **kwargs)
+    search = (search_cls or ArchSearch)(
+        train_fn=train_fn, search_space=space, backend=backend_name,
+        log_path=log_path, batch_size=3, **kwargs)
+    if search._backend is None or not search._backend.is_available():
+        raise RuntimeError(f"backend {backend_name!r} is not available")
     t0 = time.time()
     search.run(max_evals=n_evals)
     losses, accs = read_search_log(log_path)
     return summarize(losses, accs, time.time() - t0,
                      llm_success=search.llm_success,
                      llm_fallback=search.llm_fallback)
+
+
+def run_decision(train_fn, space, n_evals, log_path, url=None, **kwargs):
+    """Run DecisionSearch against a /v1/systemone decision server."""
+    from neuropt import DecisionSearch
+    from neuropt.backends import DecisionBackend
+
+    # Generous timeout: a local server on a busy GPU can take minutes per round.
+    backend = DecisionBackend(base_url=url, timeout=1800)
+    return run_neuropt(train_fn, space, backend, n_evals, log_path,
+                       search_cls=DecisionSearch, **kwargs)
 
 
 def _suggest_config(trial, space):

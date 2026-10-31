@@ -8,6 +8,8 @@ where LLM-guided search should shine over black-box methods.
 Usage:
     python examples/benchmark.py --n-evals 30
     python examples/benchmark.py --n-evals 30 --skip-qwen  # faster
+    python examples/benchmark.py --skip-qwen --skip-claude \
+        --decision-url http://127.0.0.1:8741                # + decision model
 
 Results are saved to benchmark_results.json.
 """
@@ -15,6 +17,7 @@ Results are saved to benchmark_results.json.
 import argparse
 import json
 import math
+import os
 import random
 import time
 
@@ -27,6 +30,7 @@ from benchmark_utils import (
     header,
     print_convergence,
     print_summary,
+    run_decision,
     run_neuropt,
     run_optuna,
     run_random,
@@ -155,6 +159,12 @@ def main():
     parser.add_argument("--skip-qwen", action="store_true", help="Skip local Qwen")
     parser.add_argument("--skip-claude", action="store_true", help="Skip Claude API")
     parser.add_argument("--skip-optuna", action="store_true")
+    parser.add_argument("--skip-random", action="store_true")
+    parser.add_argument("--decision-url", default=None,
+                        help="Also run DecisionSearch against this /v1/systemone server")
+    parser.add_argument("--seed", type=int, default=42, help="Seed for every method's RNG")
+    parser.add_argument("--log-dir", default="/tmp", help="Where search logs and per-method JSON go")
+    parser.add_argument("--out", default="benchmark_results.json")
     args = parser.parse_args()
 
     print(f"Device: {DEVICE}")
@@ -190,16 +200,27 @@ def main():
         try:
             all_results[label] = run_neuropt(
                 train_fn, SEARCH_SPACE, backend, args.n_evals,
-                f"/tmp/bench_{backend}.jsonl", timeout=60)
+                os.path.join(args.log_dir, f"bench_{backend}.jsonl"), timeout=60, seed=args.seed)
+        except Exception as e:
+            print(f"  Skipped: {e}")
+
+    if args.decision_url:
+        header("Decision model (DecisionSearch)")
+        try:
+            all_results["Decision model"] = run_decision(
+                train_fn, SEARCH_SPACE, args.n_evals,
+                os.path.join(args.log_dir, f"bench_decision_s{args.seed}.jsonl"),
+                url=args.decision_url, timeout=60, seed=args.seed)
         except Exception as e:
             print(f"  Skipped: {e}")
 
     if not args.skip_optuna:
         header("Optuna TPE")
-        all_results["Optuna TPE"] = run_optuna(eval_cfg, SEARCH_SPACE, args.n_evals)
+        all_results["Optuna TPE"] = run_optuna(eval_cfg, SEARCH_SPACE, args.n_evals, seed=args.seed)
 
-    header("Random Search")
-    all_results["Random"] = run_random(eval_cfg, SEARCH_SPACE, args.n_evals)
+    if not args.skip_random:
+        header("Random Search")
+        all_results["Random"] = run_random(eval_cfg, SEARCH_SPACE, args.n_evals, seed=args.seed)
 
     print_summary(all_results, args.n_evals, show_time=True)
     print_convergence(all_results, args.n_evals, col_width=16)
@@ -207,12 +228,12 @@ def main():
     # Save per-method results separately so they don't overwrite each other
     for name, r in all_results.items():
         slug = name.lower().replace(" ", "_").replace("(", "").replace(")", "")
-        path = f"/tmp/bench_200_{slug}.json"
+        path = os.path.join(args.log_dir, f"bench_{slug}_s{args.seed}.json")
         with open(path, "w") as f:
             json.dump(r, f, indent=2, default=str)
         print(f"  Saved {name} → {path}")
 
-    save_results(all_results, "benchmark_results.json")
+    save_results(all_results, args.out)
 
 
 if __name__ == "__main__":

@@ -51,7 +51,9 @@ def _load_script(script_path: Path):
 @app.command()
 def run(
     script: Path = typer.Argument(..., help="Training script (must define train_fn + search_space or model)"),
-    backend: str = typer.Option("auto", help="LLM backend: auto, claude, openai, qwen, none"),
+    backend: str = typer.Option(
+        "auto", help="Backend: auto, claude, openai, qwen, none, or decision "
+                     "(experimental: a Jev-style decision model such as H2O-Lightning-4B)"),
     log: str = typer.Option("search.jsonl", help="Log file path (JSONL, supports resume)"),
     batch_size: int = typer.Option(3, "--batch-size", "-b", help="Configs per LLM call"),
     device: Optional[str] = typer.Option(None, help="Device (cuda, mps, cpu). Auto-detects if omitted."),
@@ -60,6 +62,10 @@ def run(
         None, "--max-evals", "-n", help="Stop after N experiments (default: run forever)"),
     maximize: bool = typer.Option(
         False, "--maximize", help="Higher scores are better (accuracy, AUROC). Default: minimize (loss)."),
+    decision_url: Optional[str] = typer.Option(
+        None, "--decision-url",
+        help="Decision server root for --backend decision "
+             "(default: $NEUROPT_DECISION_URL or http://127.0.0.1:8741)"),
 ):
     """Run LLM-guided optimization on a training script.
 
@@ -73,7 +79,13 @@ def run(
     Optional: ml_context = "..." to give the LLM domain knowledge.
     Optional: minimize = False if higher scores are better (or pass --maximize).
     """
-    from neuropt import ArchSearch
+    from neuropt import ArchSearch, DecisionSearch
+
+    if decision_url is not None and backend not in ("auto", "decision"):
+        typer.echo(f"Error: --decision-url only applies to --backend decision (got {backend!r})",
+                   err=True)
+        raise typer.Exit(1)
+    use_decision = backend == "decision" or decision_url is not None
 
     train_fn, search_space, model, ml_context, script_minimize = _load_script(script)
 
@@ -84,6 +96,13 @@ def run(
         minimize = bool(script_minimize)
     else:
         minimize = True
+
+    if use_decision:
+        from neuropt.backends import DecisionBackend
+        search_cls = DecisionSearch
+        backend = DecisionBackend(base_url=decision_url)
+    else:
+        search_cls = ArchSearch
 
     kwargs = dict(
         backend=backend,
@@ -98,10 +117,10 @@ def run(
 
     if model is not None:
         typer.echo(f"Using model introspection from {script.name}")
-        search = ArchSearch.from_model(model, train_fn, **kwargs)
+        search = search_cls.from_model(model, train_fn, **kwargs)
     else:
         typer.echo(f"Using search space from {script.name}")
-        search = ArchSearch(train_fn=train_fn, search_space=search_space, **kwargs)
+        search = search_cls(train_fn=train_fn, search_space=search_space, **kwargs)
 
     search.run(max_evals=max_evals)
 

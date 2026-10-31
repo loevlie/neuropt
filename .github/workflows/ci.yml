@@ -37,11 +37,12 @@ jobs:
       - name: Run tests
         run: |
           uv add --dev pytest torch torchvision scikit-learn
-          uv run python -m pytest tests/test_core.py -v
+          uv run python -m pytest tests/test_core.py tests/test_decision_search.py -v
 
       - name: Import check
         run: |
-          uv run python -c "from neuropt import ArchSearch, LogUniform, Uniform, IntUniform, Categorical"
+          uv run python -c "from neuropt import ArchSearch, DecisionSearch, LogUniform, Uniform, IntUniform, Categorical"
+          uv run python -c "from neuropt.backends import DecisionBackend, BaseDecisionBackend"
           uv run python -c "from neuropt.backends import get_default_backend, get_backend_by_name"
           uv run python -c "from neuropt.introspect import introspect, is_sklearn_compatible"
           uv run python -c "from neuropt.cli import app"
