@@ -32,7 +32,7 @@ incumbent) and report its **test** loss. Validation best-so-far is shown next to
 |---|---|
 | `random` | Uniform random search |
 | `tpe` | Optuna TPE with Optuna's default settings |
-| `neuropt-<model>` | `ArchSearch` with that LLM, batch size 3 |
+| `neuropt-<model>` | `ArchSearch` with that LLM, batch size 3. Phase 1 uses the package's two API defaults, `haiku-4.5` and `gpt-4o-mini` (the second was added on 19 Nov 2026 after the classical arms had run, when the Anthropic account ran out of credit; no LLM results had been looked at for it) |
 | `jev` | `DecisionSearch` with hosted Jev (`jev-latest`) |
 | `<method>+default` | The same method, but its first eval is the task's default config |
 

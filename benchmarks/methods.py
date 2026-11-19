@@ -18,6 +18,7 @@ from neuropt.search_space import Categorical, IntUniform, LogUniform
 # method name -> (backend, model id)
 LLM_MODELS = {
     "neuropt-haiku-4.5": ("claude", "claude-haiku-4-5-20251001"),  # package default until Phase 2
+    "neuropt-gpt-4o-mini": ("openai", "gpt-4o-mini"),  # package's OpenAI default until Phase 2
 }
 JEV_URL, JEV_MODEL = "https://api.typesafe.ai", "jev-latest"
 JEV_USD_PER_MTOK = 0.042  # input tokens; output is free (docs.typesafe.ai/models, 19 Nov 2026)
@@ -192,12 +193,16 @@ def run_neuropt(task, log, seed, n_evals, seeded, method, workdir, backend=None)
 
     if backend is None:
         kind, model = LLM_MODELS[method]
-        if kind != "claude":
+        if kind == "claude":
+            from neuropt.backends.claude_backend import ClaudeBackend
+            backend = ClaudeBackend(model=model)
+        elif kind == "openai":
+            from neuropt.backends.openai_backend import OpenAIBackend
+            backend = OpenAIBackend(model=model)
+        else:
             raise Unavailable(f"unknown backend kind {kind!r}")
-        from neuropt.backends.claude_backend import ClaudeBackend
-        backend = ClaudeBackend(model=model)
         if not backend.is_available():
-            raise Unavailable("ANTHROPIC_API_KEY is not set")
+            raise Unavailable(f"no API key for the {kind} backend")
     backend = backend if isinstance(backend, RecordingLLM) else RecordingLLM(backend)
     search = ArchSearch(train_fn=_train_fn(log), search_space=task.space, backend=backend,
                         log_path=os.path.join(workdir, "search.jsonl"), batch_size=3, seed=seed,

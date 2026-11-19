@@ -22,13 +22,16 @@ STYLE = {
     "random": ("Random search", "#8a8980", "x"),
     "tpe": ("Optuna TPE", "#eda100", "v"),
     "neuropt-haiku-4.5": ("neuropt, Claude Haiku 4.5", "#2a78d6", "o"),
+    "neuropt-gpt-4o-mini": ("neuropt, GPT-4o mini", "#1baf7a", "s"),
     "jev": ("neuropt, Jev", "#eb6834", "^"),
 }
 # (variant, baseline) pairs judged by the decision rule in docs/evals.md
 COMPARISONS = [
     ("neuropt-haiku-4.5", "tpe"), ("neuropt-haiku-4.5", "random"),
     ("neuropt-haiku-4.5+default", "tpe+default"), ("neuropt-haiku-4.5+default", "random+default"),
-    ("jev", "tpe"), ("jev+default", "tpe+default"), ("jev", "neuropt-haiku-4.5"),
+    ("neuropt-gpt-4o-mini", "tpe"), ("neuropt-gpt-4o-mini+default", "tpe+default"),
+    ("jev", "tpe"), ("jev", "random"), ("jev+default", "tpe+default"),
+    ("jev+default", "random+default"), ("jev", "neuropt-haiku-4.5"),
     ("tpe+default", "tpe"), ("neuropt-haiku-4.5+default", "neuropt-haiku-4.5"),
 ]
 
