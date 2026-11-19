@@ -21,7 +21,7 @@ import threading
 import time
 from contextlib import contextmanager
 
-from benchmarks.methods import ALL_METHODS, Unavailable, run_method
+from benchmarks.methods import ALL_METHODS, LLMCallFailed, Unavailable, run_method
 from benchmarks.tasks import TASKS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -200,7 +200,8 @@ def main(argv=None):
         print(f"  {task.name} / {method} / seed {seed}", flush=True)
         try:
             s = run_one(task, evaluate, method, seed, args.n_evals, args.runs_dir, args.timeout, device)
-        except Unavailable as e:
+        except (Unavailable, LLMCallFailed) as e:
+            # Nothing is written for this run; the method's remaining seeds are skipped too.
             skipped[method] = str(e)
             print(f"  SKIPPED {method}: {e}", flush=True)
             continue
@@ -208,7 +209,7 @@ def main(argv=None):
         print(f"  done in {s['wall_time']:.0f}s" + (f", ${cost:.4f}" if cost else ""), flush=True)
     if skipped:
         print(f"[{task.name}] skipped, not run: {skipped}", flush=True)
-    return 0
+    return 2 if skipped else 0
 
 
 if __name__ == "__main__":

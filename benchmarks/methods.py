@@ -30,6 +30,29 @@ class Unavailable(RuntimeError):
     """The method can't run here (missing API key or package)."""
 
 
+class LLMCallFailed(BaseException):
+    """The model API failed after retries (outage, no credit, bad key).
+
+    A BaseException on purpose: the search's own "fall back to random configs" handler must not
+    swallow it, or the run would turn into random search and be cached under the model's name.
+    """
+
+
+RETRY_DELAYS = (2, 15)  # seconds before the 2nd and 3rd attempt
+
+
+def _call(fn):
+    error = None
+    for delay in (0, *RETRY_DELAYS):
+        time.sleep(delay)
+        start = time.time()
+        try:
+            return fn(), time.time() - start
+        except Exception as e:
+            error = e
+    raise LLMCallFailed(f"{type(error).__name__}: {str(error)[:300]}")
+
+
 # ── Backend wrappers that time every call ────────────────────────────────
 
 
@@ -42,13 +65,11 @@ class RecordingLLM(BaseLLMBackend):
     def generate(self, prompt, max_tokens=1024):
         if self._keep:
             self.prompts.append(prompt)
-        start = time.time()
-        try:
-            return self.inner.generate(prompt, max_tokens=max_tokens)
-        finally:
-            self.latencies.append(time.time() - start)
-            self.total_input_tokens = self.inner.total_input_tokens
-            self.total_output_tokens = self.inner.total_output_tokens
+        out, latency = _call(lambda: self.inner.generate(prompt, max_tokens=max_tokens))
+        self.latencies.append(latency)
+        self.total_input_tokens = self.inner.total_input_tokens
+        self.total_output_tokens = self.inner.total_output_tokens
+        return out
 
     def is_available(self):
         return self.inner.is_available()
@@ -71,13 +92,11 @@ class RecordingDecision(BaseDecisionBackend):
     def decide(self, state, questions):
         if self._keep:
             self.prompts.append(state + "\n" + repr(questions))
-        start = time.time()
-        try:
-            return self.inner.decide(state, questions)
-        finally:
-            self.latencies.append(time.time() - start)
-            self.total_input_tokens = self.inner.total_input_tokens
-            self.total_output_tokens = self.inner.total_output_tokens
+        out, latency = _call(lambda: self.inner.decide(state, questions))
+        self.latencies.append(latency)
+        self.total_input_tokens = self.inner.total_input_tokens
+        self.total_output_tokens = self.inner.total_output_tokens
+        return out
 
     def is_available(self):
         return self.inner.is_available()

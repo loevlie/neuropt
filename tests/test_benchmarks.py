@@ -9,8 +9,14 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from benchmarks import methods as bench_methods  # noqa: E402
 from benchmarks import run as bench_run  # noqa: E402
-from benchmarks.methods import RecordingDecision, RecordingLLM, run_method  # noqa: E402
+from benchmarks.methods import (  # noqa: E402  # noqa: E402
+    LLMCallFailed,
+    RecordingDecision,
+    RecordingLLM,
+    run_method,
+)
 from benchmarks.run import EvalLog, is_complete, run_one, run_path  # noqa: E402
 from benchmarks.tasks import Task  # noqa: E402
 from neuropt.arch_search import _normalize_search_space, _random_config  # noqa: E402
@@ -185,3 +191,37 @@ def test_main_skips_finished_runs(tmp_path, monkeypatch, capsys):
     assert "1 run(s) to do" in capsys.readouterr().out
     assert bench_run.main(args) == 0
     assert "0 run(s) to do" in capsys.readouterr().out
+
+
+def test_api_failure_aborts_the_run_instead_of_becoming_random_search(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(bench_methods, "RETRY_DELAYS", (0, 0))
+
+    class Broke(FakeLLM):
+        calls = 0
+
+        def generate(self, prompt, max_tokens=1024):
+            Broke.calls += 1
+            raise RuntimeError("credit balance is too low")
+
+    log = EvalLog(TASK, TASK.build("cpu"), 0, 6, verbose=False)
+    with pytest.raises(LLMCallFailed, match="credit balance"):
+        run_method("neuropt-fake", TASK, log, 0, 6, str(tmp_path), backend=RecordingLLM(Broke()))
+    assert Broke.calls == 3  # retried, then gave up
+    assert log.n == 0  # no random configs were trained under the model's name
+
+
+def test_one_transient_api_error_is_retried(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(bench_methods, "RETRY_DELAYS", (0, 0))
+
+    class Flaky(FakeLLM):
+        failed = False
+
+        def generate(self, prompt, max_tokens=1024):
+            if not Flaky.failed:
+                Flaky.failed = True
+                raise RuntimeError("overloaded")
+            return super().generate(prompt, max_tokens)
+
+    log = EvalLog(TASK, TASK.build("cpu"), 0, 6, verbose=False)
+    stats = run_method("neuropt-fake", TASK, log, 0, 6, str(tmp_path), backend=RecordingLLM(Flaky()))
+    assert log.n == 6 and stats["fallback_evals"] == 0 and stats["llm_errors"] == 0
