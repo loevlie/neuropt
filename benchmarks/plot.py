@@ -86,10 +86,11 @@ def compare(runs_a, runs_b, at):
     diff = statistics.mean(a[s] - b[s] for s in seeds)
     wins = sum(a[s] < b[s] for s in seeds)
     losses = sum(a[s] > b[s] for s in seeds)
-    need = 4 if len(seeds) >= 5 else len(seeds)
-    if diff < 0 and wins >= need:
+    if len(seeds) < 5:
+        verdict = f"incomplete ({len(seeds)} of 5 seeds)"
+    elif diff < 0 and wins >= 4:
         verdict = "helps"
-    elif diff > 0 and losses >= need:
+    elif diff > 0 and losses >= 4:
         verdict = "worse"
     else:
         verdict = "no measurable difference"
