@@ -147,8 +147,10 @@ def write_tables(runs, path):
                 + (f"{_fmt([x.get('cost_usd') for x in llm], 4)} | {total('calls')} | "
                    f"{_fmt([x.get('latency_mean') for x in llm], 2)} | "
                    f"{total('tokens_in'):,} / {total('tokens_out'):,} | "
-                   f"{total('parse_failures')} of {total('llm_calls')} | {total('llm_errors')} | "
-                   f"{total('duplicate_configs')} of {total('proposed_configs')} | "
+                   + (f"{total('parse_failures')} of {total('llm_calls')} | {total('llm_errors')} | "
+                      f"{total('duplicate_configs')} of {total('proposed_configs')} | "
+                      if total("llm_calls") else "n/a | n/a | n/a | ")  # decision models don't write JSON
+                   +
                    f"{total('fallback_evals')} | " if has_llm else "none | " + "n/a | " * 7)
                 + f"{sum(r['failed_evals'] for r in rs)} | "
                 f"{100 * statistics.mean(r['duplicate_rate'] for r in rs):.1f}% |")
