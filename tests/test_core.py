@@ -1164,3 +1164,18 @@ class TestAutoQwenNotice:
         })
         assert backends.get_default_backend() is not None
         assert "Qwen2.5-1.5B" in capsys.readouterr().out
+
+
+class TestSearchStats:
+    def test_counts_parse_failures_and_duplicates(self, tmp_log):
+        good = '[{"x": 2.0}, {"x": 2.0}]'  # second config duplicates the first
+        search = ArchSearch(lambda cfg: {"score": cfg["x"]}, {"x": (1.0, 10.0)},
+                            backend=_CannedLLM([good, good, good, "no json here"]),
+                            log_path=tmp_log, batch_size=2)
+        search.run(max_evals=4)
+        assert search.stats["llm_calls"] == 4
+        assert search.stats["parse_failures"] == 1
+        assert search.stats["retries"] == 2
+        assert search.stats["duplicate_configs"] == 3
+        assert search.stats["proposed_configs"] == 6
+        assert search.stats["llm_errors"] == 0

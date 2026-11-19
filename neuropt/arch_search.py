@@ -238,6 +238,10 @@ class ArchSearch:
         self.total_experiments = 0
         self.llm_success = 0
         self.llm_fallback = 0
+        # Per-call counters for evaluation: how often the backend was called,
+        # failed to parse or errored, and how many proposed configs were duplicates.
+        self.stats = {"llm_calls": 0, "parse_failures": 0, "llm_errors": 0,
+                      "proposed_configs": 0, "duplicate_configs": 0, "retries": 0}
 
     @classmethod
     def _resolve_backend_for(cls, backend):
@@ -381,13 +385,16 @@ class ArchSearch:
         for attempt in range(self.MAX_RETRIES):
             try:
                 response = self._backend.generate(prompt, max_tokens=2048)
+                self.stats["llm_calls"] += 1
                 configs = self._parse_response(response)
                 if configs is not None:
+                    self.stats["proposed_configs"] += len(configs)
                     # Top up a short (but valid) answer with random configs
                     while len(configs) < self.batch_size:
                         configs.append(_random_config(self.search_space, rng))
 
                 if configs is None:
+                    self.stats["parse_failures"] += 1
                     self.llm_fallback += 1
                     # Show first 200 chars of response for debugging
                     snippet = response[:200].replace('\n', ' ') if response else "(empty)"
@@ -396,12 +403,14 @@ class ArchSearch:
 
                 # Check for duplicates against history
                 dupes = self._find_duplicates(configs, history)
+                self.stats["duplicate_configs"] += len(dupes)
                 if not dupes:
                     self.llm_success += 1
                     return configs, "llm"
 
                 # Tell the LLM what it repeated and ask for something new
                 if attempt < self.MAX_RETRIES - 1:
+                    self.stats["retries"] += 1
                     print(f"  [retry {attempt+1}: {len(dupes)} duplicate configs, asking LLM to adjust]")
                     prompt = self._build_retry_prompt(configs, dupes, history)
                 else:
@@ -414,6 +423,7 @@ class ArchSearch:
                     return configs, "llm"
 
             except Exception as e:
+                self.stats["llm_errors"] += 1
                 self.llm_fallback += 1
                 print(f"  [LLM error: {e}, using random]")
                 break
