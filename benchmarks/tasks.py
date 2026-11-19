@@ -51,10 +51,10 @@ def _torch_evaluate(make_model, splits, epochs, default_batch_size=128):
         model.eval()
         loss, correct = 0.0, 0
         with torch.no_grad():
-            for i in range(0, len(x), 1000):
-                out = model(x[i:i + 1000])
-                loss += crit(out, y[i:i + 1000]).item() * len(out)
-                correct += (out.argmax(1) == y[i:i + 1000]).sum().item()
+            for i in range(0, len(x), 250):
+                out = model(x[i:i + 250])
+                loss += crit(out, y[i:i + 250]).item() * len(out)
+                correct += (out.argmax(1) == y[i:i + 250]).sum().item()
         return loss / len(x), correct / len(x)
 
     def evaluate(cfg, seed):
