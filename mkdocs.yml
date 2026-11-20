@@ -54,6 +54,7 @@ nav:
     - PyTorch: examples.md
     - XGBoost & sklearn: xgboost.md
     - Benchmarks: benchmarks.md
+    - Evaluations: evals.md
 
 markdown_extensions:
   - pymdownx.highlight:

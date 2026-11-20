@@ -87,6 +87,74 @@ Problems with that benchmark, which the protocol above fixes:
    random search while still being labelled as Qwen.
 7. On XGBoost, random search beat neuropt with Claude Haiku 4.5 in this run.
 
-## Results
+## Phase 1 results: current defaults against baselines (20 Nov 2026)
 
-Not run yet.
+5 seeds, 30 evals, test loss of the best-validation config. Full tables, including per-run tokens,
+latency and cost, are in [`benchmarks/results.md`](https://github.com/loevlie/neuropt/blob/main/benchmarks/results.md);
+the raw runs are in `benchmarks/runs/`.
+
+![Harness results](assets/harness_test.png)
+
+| Search from scratch | CNN | XGBoost | Tabular MLP |
+|---|:---:|:---:|:---:|
+| Random search | 0.524 ± 0.075 | 0.404 ± 0.010 | 0.561 ± 0.002 |
+| Optuna TPE | 0.477 ± 0.082 | 0.396 ± 0.007 | 0.557 ± 0.003 |
+| neuropt, Claude Haiku 4.5 | 0.372 ± 0.004 | 0.398 ± 0.015 | 0.558 ± 0.004 |
+| neuropt, GPT-4o mini | 0.466 ± 0.068 | 0.403 ± 0.006 | 0.566 ± 0.005 |
+| neuropt, Jev | 0.437 ± 0.053 | 0.399 ± 0.012 | 0.560 ± 0.004 |
+
+| Default config first | CNN | XGBoost | Tabular MLP |
+|---|:---:|:---:|:---:|
+| Random search | 0.432 ± 0.006 | 0.403 ± 0.009 | 0.560 ± 0.004 |
+| Optuna TPE | 0.361 ± 0.028 | 0.400 ± 0.003 | 0.556 ± 0.003 |
+| neuropt, Claude Haiku 4.5 | 0.363 ± 0.014 | 0.387 ± 0.004 | 0.560 ± 0.004 |
+| neuropt, GPT-4o mini | 0.406 ± 0.026 | 0.393 ± 0.009 | 0.569 ± 0.008 |
+| neuropt, Jev | 0.371 ± 0.010 | 0.393 ± 0.010 | 0.562 ± 0.004 |
+
+Verdicts by the decision rule, each neuropt arm against Optuna TPE with the same seeding
+(seeds better / worse in brackets):
+
+| | CNN | XGBoost | Tabular MLP |
+|---|---|---|---|
+| Claude Haiku 4.5, from scratch | helps (5 / 0) | no difference (3 / 2) | no difference (2 / 3) |
+| Claude Haiku 4.5, default first | no difference (3 / 2) | helps (5 / 0) | no difference (2 / 3) |
+| GPT-4o mini, from scratch | no difference (3 / 2) | no difference (2 / 3) | worse (0 / 5) |
+| GPT-4o mini, default first | worse (0 / 5) | helps (4 / 1) | worse (0 / 5) |
+| Jev, from scratch | helps (4 / 1) | no difference (2 / 3) | no difference (2 / 3) |
+| Jev, default first | worse (1 / 4) | helps (4 / 1) | worse (1 / 4) |
+
+**What holds up.**
+
+- From scratch on the CNN space, Claude Haiku 4.5 beats TPE and random search on every seed, and
+  most of the gain is there after 5 evals (0.418, against 0.709 for TPE and 0.816 for random).
+- With the default first on XGBoost, all three neuropt arms beat default-seeded TPE. The margins
+  are small (0.007 to 0.012 in log loss).
+
+**Negative results.**
+
+- No neuropt arm helps on 2 of the 3 tasks against TPE under the same seeding, which was the bar
+  for a general claim. The honest summary is "helps in some settings".
+- The CNN advantage is mostly the model knowing a good starting point. Give TPE a textbook default
+  config and it matches Claude Haiku 4.5 (0.361 against 0.363). This is the effect reported in
+  arXiv 2606.21641. The default config alone scores 0.432, better than unseeded TPE after 30 evals.
+- On the tabular MLP nothing beats TPE, and GPT-4o mini is worse on every seed, seeded or not.
+- GPT-4o mini, the OpenAI default, is the weakest arm: it beats TPE in 1 of 6 settings and is
+  worse in 3.
+- Jev is behind Claude Haiku 4.5 on the CNN (worse on 4 of 5 seeds). The single-seed Phase 0 run
+  that had Jev ahead did not hold up.
+- Claude Haiku 4.5 returned unusable JSON on 18 of 100 calls on the MLP task and 4 of 101 on the
+  CNN, so 53 of 300 MLP evals and 12 of 300 CNN evals were random fallbacks. GPT-4o mini failed on
+  1 of 300 calls. The cause on the MLP task has not been examined yet; fixing it (structured
+  outputs) is Phase 2.
+- Cost: a 30-eval XGBoost run with Claude Haiku 4.5 costs $0.61, eleven times the CNN run, because
+  full 500-round boosting curves are put in every prompt.
+
+**Caveats.**
+
+- The CNN ran on an RTX 4090; XGBoost and the MLP ran on an M1 Max, two tasks at a time, so their
+  wall-clock times are inflated and not comparable with the CNN's.
+- `neuropt-gpt-4o-mini` was added after the classical arms had finished (see Methods).
+- 5 seeds per arm. Differences of a few thousandths between arms are within noise unless the
+  table above says otherwise.
+
+Total API spend for these runs: about $7.20 Anthropic, $0.76 OpenAI, $0.17 Jev.

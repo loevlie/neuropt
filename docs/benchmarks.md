@@ -1,60 +1,49 @@
 # Benchmarks
 
-## 15-eval benchmark (14-parameter CNN search)
+neuropt is compared with random search and Optuna TPE on three tasks, with a held-out test split that
+no optimizer or prompt sees, 30 evals per run and 5 seeds per method. The number reported is the test
+loss of the config with the best validation loss (mean ± std, lower is better).
 
-All methods get exactly 15 evaluations on the same search space. FashionMNIST, 5 epochs per eval, M1 MacBook.
+![Harness results](assets/harness_test.png){ width="900" }
 
-![Benchmark results](assets/benchmark.png){ width="700" }
+| Search from scratch | CNN (14 params) | XGBoost (9 params) | Tabular MLP (9 params) |
+|---|:---:|:---:|:---:|
+| Random search | 0.524 ± 0.075 | 0.404 ± 0.010 | 0.561 ± 0.002 |
+| Optuna TPE | 0.477 ± 0.082 | 0.396 ± 0.007 | 0.557 ± 0.003 |
+| neuropt, Claude Haiku 4.5 | **0.372 ± 0.004** | 0.398 ± 0.015 | 0.558 ± 0.004 |
+| neuropt, GPT-4o mini | 0.466 ± 0.068 | 0.403 ± 0.006 | 0.566 ± 0.005 |
+| neuropt, Jev decision model | 0.437 ± 0.053 | 0.399 ± 0.012 | 0.560 ± 0.004 |
 
-| Method | Best Loss | Best Acc | LLM Fallbacks |
-|--------|-----------|----------|---------------|
-| **LLM (Claude)** | **0.385** | **85.4%** | 0/5 |
-| Optuna TPE | 0.454 | 82.7% | — |
-| Random Search | 0.610 | 76.7% | — |
-| LLM (Qwen local) | 0.637 | 75.0% | 2/5 |
+| Default config evaluated first | CNN | XGBoost | Tabular MLP |
+|---|:---:|:---:|:---:|
+| Random search | 0.432 ± 0.006 | 0.403 ± 0.009 | 0.560 ± 0.004 |
+| Optuna TPE | 0.361 ± 0.028 | 0.400 ± 0.003 | 0.556 ± 0.003 |
+| neuropt, Claude Haiku 4.5 | 0.363 ± 0.014 | **0.387 ± 0.004** | 0.560 ± 0.004 |
+| neuropt, GPT-4o mini | 0.406 ± 0.026 | 0.393 ± 0.009 | 0.569 ± 0.008 |
+| neuropt, Jev decision model | 0.371 ± 0.010 | 0.393 ± 0.010 | 0.562 ± 0.004 |
 
-### Convergence
+## What to take from it
 
-| Eval | LLM (Claude) | Optuna TPE | Random | LLM (Qwen) |
-|------|-------------|------------|--------|-------------|
-| 5 | **0.401** | 0.612 | 0.655 | 0.748 |
-| 10 | **0.399** | 0.454 | 0.655 | 0.637 |
-| 15 | **0.385** | 0.454 | 0.610 | 0.637 |
+- **neuropt is most useful when you start from nothing on an architecture search.** On the CNN space
+  Claude Haiku 4.5 beats TPE and random search on all 5 seeds and gets most of the way in 5 evals.
+- **A good default config closes that gap.** TPE seeded with a textbook CNN config matches it.
+- **On tabular tasks the differences are small.** With XGBoost's defaults evaluated first, neuropt
+  beats default-seeded TPE by about 0.01 log loss; on the MLP nothing beats TPE.
+- **The model matters.** GPT-4o mini is clearly weaker than Claude Haiku 4.5 here.
 
-Claude was ahead of Optuna from eval 5 onward — it started with good architectural priors (residual connections, AdamW, reasonable LR) instead of discovering them through trial and error.
+The protocol, the decision rule (fixed before the runs), per-run cost and latency, and the negative
+results are on the [Evaluations](evals.md) page.
 
-All benchmark results used **Claude Haiku 4.5** (the smallest, cheapest Claude model for pennies per run). We expect stronger results with Sonnet or Opus, which have better reasoning capabilities for complex search spaces.
-
-### What went wrong with the other methods
-
-**Optuna TPE** — 7 out of 15 evals scored above 1.0 (worse than random chance). With 14 parameters, TPE's surrogate model needs many more samples before it becomes useful. It found one good config at eval 8 but couldn't build on it.
-
-**Random search** — Actually outperformed Qwen, which says more about Qwen's parse failures than random's quality. Random got lucky with a few configs but has no mechanism to improve.
-
-**LLM (Qwen local)** — Failed to produce valid JSON on 2 of 5 iterations (40% fallback rate). When it did generate configs, they were reasonable but not as focused as Claude's. The local Qwen backend is experimental — it works for simpler search spaces but struggles with 14-key JSON output.
-
-### Why Claude wins on this search space
-
-With 14 parameters including categorical choices (activation, optimizer, pool type, residual on/off), the search space has complex interactions:
-
-- High LR + no batch norm = training instability
-- Deep networks + no residual = vanishing gradients
-- Dropout + small dataset subset = unnecessary regularization
-
-Claude starts with knowledge of these interactions. Optuna has to discover each one empirically, burning evals on configurations that any ML practitioner would avoid.
-
-## 2-parameter search
-
-![2-param search results](assets/search_combined_15.png){ width="700" }
-
-### Run it yourself
+## Run it yourself
 
 ```bash
-pip install "neuropt[llm]"
+pip install "neuropt[llm]" optuna xgboost torch torchvision scikit-learn matplotlib
 export ANTHROPIC_API_KEY="sk-ant-..."
 
-python examples/benchmark.py
-python examples/benchmark.py --n-evals 30          # longer run
-python examples/benchmark.py --skip-qwen           # skip local model
-python examples/benchmark.py --skip-qwen --n-evals 50  # thorough comparison
+python -m benchmarks.run      # from a clone of the repository; finished runs are skipped
+python -m benchmarks.plot     # figures and tables
 ```
+
+Methods whose API key is missing are skipped and reported, never replaced by random search.
+The older single-seed scripts in `examples/benchmark*.py` are kept for quick experiments; their
+numbers are not comparable with the ones above (see [Evaluations](evals.md), Phase 0).
