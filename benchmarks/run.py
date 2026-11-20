@@ -21,7 +21,7 @@ import threading
 import time
 from contextlib import contextmanager
 
-from benchmarks.methods import ALL_METHODS, LLMCallFailed, Unavailable, run_method
+from benchmarks.methods import ALL_METHODS, Frozen, LLMCallFailed, Unavailable, run_method
 from benchmarks.tasks import TASKS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -201,7 +201,7 @@ def main(argv=None):
         print(f"  {task.name} / {method} / seed {seed}", flush=True)
         try:
             s = run_one(task, evaluate, method, seed, args.n_evals, args.runs_dir, args.timeout, device)
-        except (Unavailable, LLMCallFailed) as e:
+        except (Unavailable, LLMCallFailed, Frozen) as e:
             # Nothing is written for this run; the method's remaining seeds are skipped too.
             skipped[method] = str(e)
             print(f"  SKIPPED {method}: {e}", flush=True)

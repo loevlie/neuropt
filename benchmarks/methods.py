@@ -3,10 +3,16 @@
 Every method drives the same ``EvalLog`` callable: ``log(config) -> public result``. The log counts
 the budget, applies the time limit and keeps the test metrics to itself, so no method can see them.
 
-Method names: ``random``, ``tpe``, ``neuropt-<model>``, ``jev``; add ``+default`` to make the first
-eval the task's default config.
+Method names: ``random``, ``tpe``, ``neuropt-<model>``, ``jev``, ``hybrid-<model>``; add ``+default``
+to make the first eval the task's default config.
+
+``neuropt-haiku-4.5`` and ``neuropt-gpt-4o-mini`` are the Phase 1 arms, produced by neuropt 0.6.1
+(whole batch discarded on one invalid config, full curves, no structured outputs). They are frozen:
+their cached runs are kept and new runs are refused, so a newer package version can't be cached under
+their names. ``neuropt-v2-<model>`` arms use this branch's ArchSearch.
 """
 
+import math
 import os
 import random
 import time
@@ -17,18 +23,31 @@ from neuropt.search_space import Categorical, IntUniform, LogUniform
 
 # method name -> (backend, model id)
 LLM_MODELS = {
-    "neuropt-haiku-4.5": ("claude", "claude-haiku-4-5-20251001"),  # package default until Phase 2
-    "neuropt-gpt-4o-mini": ("openai", "gpt-4o-mini"),  # package's OpenAI default until Phase 2
+    "neuropt-haiku-4.5": ("claude", "claude-haiku-4-5-20251001"),  # Phase 1 (0.6.1), frozen
+    "neuropt-gpt-4o-mini": ("openai", "gpt-4o-mini"),  # Phase 1 (0.6.1), frozen
+    "neuropt-v2-haiku-4.5": ("claude", "claude-haiku-4-5-20251001"),
+    "neuropt-v2-haiku-5.5": ("claude", "claude-haiku-5-5"),
+    "neuropt-v2-gpt-4o-mini": ("openai", "gpt-4o-mini"),
+    # Local model behind an OpenAI-compatible server at $NEUROPT_LLM_BASE_URL (Ollama)
+    "neuropt-v2-qwen3.5-9b": ("compatible", "qwen3.5:9b"),
 }
+FROZEN = {"neuropt-haiku-4.5", "neuropt-gpt-4o-mini"}
+# hybrid-<model>: that model's ArchSearch for the first evals, then Optuna TPE warm-started with them
+HYBRID = {"hybrid-v2-haiku-5.5": "neuropt-v2-haiku-5.5"}
+HYBRID_LLM_EVALS = 9  # 3 LLM calls (plus the default for +default)
 JEV_URL, JEV_MODEL = "https://api.typesafe.ai", "jev-latest"
 JEV_USD_PER_MTOK = 0.042  # input tokens; output is free (docs.typesafe.ai/models, 19 Nov 2026)
 
-BASE_METHODS = ["random", "tpe", *LLM_MODELS, "jev"]
+BASE_METHODS = ["random", "tpe", *LLM_MODELS, "jev", *HYBRID]
 ALL_METHODS = [m + suffix for m in BASE_METHODS for suffix in ("", "+default")]
 
 
 class Unavailable(RuntimeError):
     """The method can't run here (missing API key or package)."""
+
+
+class Frozen(RuntimeError):
+    """A Phase 1 arm whose code no longer exists in this version of the package."""
 
 
 class LLMCallFailed(BaseException):
@@ -64,13 +83,26 @@ class RecordingLLM(BaseLLMBackend):
         self._keep = keep_prompts
 
     def generate(self, prompt, max_tokens=1024):
+        return self.generate_structured(prompt, max_tokens=max_tokens)
+
+    def generate_structured(self, prompt, system=None, schema=None, max_tokens=1024):
         if self._keep:
-            self.prompts.append(prompt)
-        out, latency = _call(lambda: self.inner.generate(prompt, max_tokens=max_tokens))
+            self.prompts.append(prompt if system is None else system + "\n" + prompt)
+        out, latency = _call(lambda: self.inner.generate_structured(
+            prompt, system=system, schema=schema, max_tokens=max_tokens))
         self.latencies.append(latency)
         self.total_input_tokens = self.inner.total_input_tokens
         self.total_output_tokens = self.inner.total_output_tokens
         return out
+
+    @property
+    def structured(self):
+        return getattr(self.inner, "_structured", None)
+
+    @property
+    def cache_tokens(self):
+        return (getattr(self.inner, "cache_write_tokens", 0),
+                getattr(self.inner, "cache_read_tokens", 0))
 
     def is_available(self):
         return self.inner.is_available()
@@ -168,7 +200,13 @@ def _run_search(search, backend, task, log, n_evals, seeded):
         row["source"] = "default" if source == "initial" else source
 
     lat = backend.latencies
+    extra = {}
+    if isinstance(backend, RecordingLLM):
+        extra = {"structured_outputs": backend.structured,
+                 "cache_write_tokens": backend.cache_tokens[0],
+                 "cache_read_tokens": backend.cache_tokens[1]}
     return {
+        **extra,
         "backend": backend.name,
         "calls": len(lat),
         "latency_mean": sum(lat) / len(lat) if lat else None,
@@ -188,26 +226,92 @@ def _train_fn(log):
 
 
 def run_neuropt(task, log, seed, n_evals, seeded, method, workdir, backend=None):
+    search, backend = _arch_search(task, log, seed, seeded, method, workdir, backend)
+    return _run_search(search, backend, task, log, n_evals, seeded)
+
+
+def _make_llm(method):
+    kind, model = LLM_MODELS[method]
+    if kind == "claude":
+        from neuropt.backends.claude_backend import ClaudeBackend
+        backend = ClaudeBackend(model=model)
+    elif kind == "openai":
+        from neuropt.backends.openai_backend import OpenAIBackend
+        backend = OpenAIBackend(model=model, base_url="")
+    elif kind == "compatible":
+        from neuropt.backends.openai_backend import OpenAIBackend
+        if not os.environ.get("NEUROPT_LLM_BASE_URL"):
+            raise Unavailable("NEUROPT_LLM_BASE_URL is not set (OpenAI-compatible server)")
+        backend = OpenAIBackend(model=model)
+    else:
+        raise Unavailable(f"unknown backend kind {kind!r}")
+    if not backend.is_available():
+        raise Unavailable(f"no API key for the {kind} backend")
+    return backend
+
+
+def _arch_search(task, log, seed, seeded, method, workdir, backend):
     from neuropt import ArchSearch
 
     if backend is None:
-        kind, model = LLM_MODELS[method]
-        if kind == "claude":
-            from neuropt.backends.claude_backend import ClaudeBackend
-            backend = ClaudeBackend(model=model)
-        elif kind == "openai":
-            from neuropt.backends.openai_backend import OpenAIBackend
-            backend = OpenAIBackend(model=model)
-        else:
-            raise Unavailable(f"unknown backend kind {kind!r}")
-        if not backend.is_available():
-            raise Unavailable(f"no API key for the {kind} backend")
+        backend = _make_llm(method)
     backend = backend if isinstance(backend, RecordingLLM) else RecordingLLM(backend)
     search = ArchSearch(train_fn=_train_fn(log), search_space=task.space, backend=backend,
                         log_path=os.path.join(workdir, "search.jsonl"), batch_size=3, seed=seed,
                         timeout=log.timeout * 10,  # the harness enforces the real time limit
                         initial_configs=[dict(task.default)] if seeded else None)
-    return _run_search(search, backend, task, log, n_evals, seeded)
+    return search, backend
+
+
+def run_hybrid(task, log, seed, n_evals, seeded, method, workdir, backend=None):
+    """The LLM proposes the first evals, then Optuna TPE continues from all of them.
+
+    TPE gets the LLM-phase trials through ``add_trial`` with their validation scores (the same
+    public scores the LLM saw), so its model starts from them instead of random startup trials.
+    """
+    try:
+        import optuna
+    except ImportError as e:
+        raise Unavailable("optuna is not installed") from e
+    search, backend = _arch_search(task, log, seed, seeded, HYBRID[method], workdir, backend)
+    llm_evals = min(n_evals, HYBRID_LLM_EVALS + int(seeded))
+    stats = _run_search(search, backend, task, log, llm_evals, seeded)
+
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    space = _normalize_search_space(task.space)
+    dists = {name: _optuna_distribution(optuna, dim) for name, dim in space.items()}
+    study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(seed=seed))
+    for row in _JSONLLogger(search.log_path).load_history():
+        params = {k: row["config"][k] for k in space}
+        score = row["score"] if math.isfinite(row["score"]) else task.fail_score
+        study.add_trial(optuna.trial.create_trial(params=params, distributions=dists, value=score))
+
+    def objective(trial):
+        cfg = {name: (trial.suggest_categorical(name, dim.choices) if isinstance(dim, Categorical)
+                      else trial.suggest_int(name, dim.low, dim.high) if isinstance(dim, IntUniform)
+                      else trial.suggest_float(name, dim.low, dim.high,
+                                               log=isinstance(dim, LogUniform)))
+               for name, dim in space.items()}
+        return log(cfg, source="tpe")["score"]
+
+    study.optimize(objective, n_trials=n_evals - log.n)
+    stats["llm_phase_evals"] = llm_evals
+    return stats
+
+
+def _optuna_distribution(optuna, dim):
+    """The distribution suggest_* would record; Optuna < 3 (the Mac runs) has older class names."""
+    d = optuna.distributions
+    log = isinstance(dim, LogUniform)
+    if isinstance(dim, Categorical):
+        return d.CategoricalDistribution(dim.choices)
+    if hasattr(d, "FloatDistribution"):
+        if isinstance(dim, IntUniform):
+            return d.IntDistribution(dim.low, dim.high)
+        return d.FloatDistribution(dim.low, dim.high, log=log)
+    if isinstance(dim, IntUniform):
+        return d.IntUniformDistribution(dim.low, dim.high)
+    return d.LogUniformDistribution(dim.low, dim.high) if log else d.UniformDistribution(dim.low, dim.high)
 
 
 def run_jev(task, log, seed, n_evals, seeded, workdir, backend=None):
@@ -240,8 +344,13 @@ def run_method(method, task, log, seed, n_evals, workdir, backend=None):
         return run_random(task, log, seed, n_evals, seeded)
     if base == "tpe":
         return run_tpe(task, log, seed, n_evals, seeded)
+    if base in FROZEN and backend is None:
+        raise Frozen(f"{base} is a Phase 1 arm produced by neuropt 0.6.1; its cached runs are kept, "
+                     "but this version of the package can't reproduce it. Use neuropt-v2-*.")
     if base == "jev":
         return run_jev(task, log, seed, n_evals, seeded, workdir, backend)
+    if base in HYBRID:
+        return run_hybrid(task, log, seed, n_evals, seeded, base, workdir, backend)
     if base in LLM_MODELS or backend is not None:
         return run_neuropt(task, log, seed, n_evals, seeded, base, workdir, backend)
     raise ValueError(f"unknown method {method!r}")

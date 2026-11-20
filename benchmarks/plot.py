@@ -24,6 +24,12 @@ STYLE = {
     "neuropt-haiku-4.5": ("neuropt, Claude Haiku 4.5", "#2a78d6", "o"),
     "neuropt-gpt-4o-mini": ("neuropt, GPT-4o mini", "#1baf7a", "s"),
     "jev": ("neuropt, Jev", "#eb6834", "^"),
+    # neuropt-v2-*: this branch's ArchSearch (structured outputs, partial batches kept, 20-point curves)
+    "neuropt-v2-haiku-4.5": ("neuropt v2, Claude Haiku 4.5", "#0b3f8c", "o"),
+    "neuropt-v2-haiku-5.5": ("neuropt v2, Claude Haiku 5.5", "#8a3fd1", "D"),
+    "neuropt-v2-gpt-4o-mini": ("neuropt v2, GPT-4o mini", "#0e7a52", "s"),
+    "neuropt-v2-qwen3.5-9b": ("neuropt v2, Qwen3.5 9B (local)", "#c2367f", "P"),
+    "hybrid-v2-haiku-5.5": ("Haiku 5.5 then TPE", "#4d4d4d", "*"),
 }
 # (variant, baseline) pairs judged by the decision rule in docs/evals.md
 COMPARISONS = [
@@ -33,6 +39,19 @@ COMPARISONS = [
     ("jev", "tpe"), ("jev", "random"), ("jev+default", "tpe+default"),
     ("jev+default", "random+default"), ("jev", "neuropt-haiku-4.5"),
     ("tpe+default", "tpe"), ("neuropt-haiku-4.5+default", "neuropt-haiku-4.5"),
+    # Phase 2: same model, new proposal handling (v2) against Phase 1 (0.6.1)
+    ("neuropt-v2-haiku-4.5", "neuropt-haiku-4.5"),
+    ("neuropt-v2-haiku-4.5+default", "neuropt-haiku-4.5+default"),
+    ("neuropt-v2-gpt-4o-mini", "neuropt-gpt-4o-mini"),
+    ("neuropt-v2-gpt-4o-mini+default", "neuropt-gpt-4o-mini+default"),
+    # Phase 2/3: v2 arms against the baselines and each other
+    *[(f"{m}{s}", f"tpe{s}") for m in ("neuropt-v2-haiku-4.5", "neuropt-v2-haiku-5.5",
+                                       "neuropt-v2-gpt-4o-mini", "neuropt-v2-qwen3.5-9b",
+                                       "hybrid-v2-haiku-5.5") for s in ("", "+default")],
+    ("neuropt-v2-haiku-5.5", "neuropt-v2-haiku-4.5"),
+    ("neuropt-v2-haiku-5.5+default", "neuropt-v2-haiku-4.5+default"),
+    ("hybrid-v2-haiku-5.5", "neuropt-v2-haiku-5.5"),
+    ("hybrid-v2-haiku-5.5+default", "neuropt-v2-haiku-5.5+default"),
 ]
 
 

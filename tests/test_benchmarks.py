@@ -67,7 +67,7 @@ class FakeDecision(BaseDecisionBackend):
 
 
 def _backend(method):
-    if method.startswith("neuropt"):
+    if method.startswith(("neuropt", "hybrid")):
         return RecordingLLM(FakeLLM(), keep_prompts=True)
     if method.startswith("jev"):
         return RecordingDecision(FakeDecision(), keep_prompts=True)
@@ -98,7 +98,8 @@ def test_exact_budget_and_default_first(method, tmp_path, capsys):
         assert all(r["source"] != "default" for r in log.rows)
 
 
-@pytest.mark.parametrize("method", ["neuropt-fake", "neuropt-fake+default", "jev", "jev+default"])
+@pytest.mark.parametrize("method", ["neuropt-fake", "neuropt-fake+default", "jev", "jev+default",
+                                    "hybrid-v2-haiku-5.5+default"])
 def test_test_metrics_never_reach_the_model(method, tmp_path, capsys):
     log, backend, _ = _run(method, tmp_path, n_evals=9)
     assert backend.prompts, "the model was never called"
@@ -225,3 +226,29 @@ def test_one_transient_api_error_is_retried(tmp_path, monkeypatch, capsys):
     log = EvalLog(TASK, TASK.build("cpu"), 0, 6, verbose=False)
     stats = run_method("neuropt-fake", TASK, log, 0, 6, str(tmp_path), backend=RecordingLLM(Flaky()))
     assert log.n == 6 and stats["fallback_evals"] == 0 and stats["llm_errors"] == 0
+
+
+@pytest.mark.parametrize("seeded", [False, True])
+def test_hybrid_llm_then_tpe(seeded, tmp_path, capsys):
+    pytest.importorskip("optuna")
+    method = "hybrid-v2-haiku-5.5" + ("+default" if seeded else "")
+    log, backend, stats = _run(method, tmp_path, n_evals=14)
+    sources = [r["source"] for r in log.rows]
+    n_llm = bench_methods.HYBRID_LLM_EVALS + int(seeded)
+    assert log.n == 14 and stats["llm_phase_evals"] == n_llm
+    assert all(s != "tpe" for s in sources[:n_llm]) and set(sources[n_llm:]) == {"tpe"}
+    assert len(backend.latencies) == 3  # 9 LLM-phase configs, 3 per call
+    if seeded:
+        assert sources[0] == "default"
+
+
+def test_frozen_phase1_arm_is_not_rerun(tmp_path):
+    log = EvalLog(TASK, TASK.build("cpu"), 0, 3, verbose=False)
+    with pytest.raises(bench_methods.Frozen):
+        run_method("neuropt-haiku-4.5", TASK, log, 0, 3, str(tmp_path))
+    assert log.n == 0
+
+
+def test_structured_and_cache_stats_recorded(tmp_path, capsys):
+    _, _, stats = _run("neuropt-fake", tmp_path)
+    assert {"structured_outputs", "cache_write_tokens", "cache_read_tokens"} <= set(stats)
