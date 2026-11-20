@@ -54,15 +54,28 @@ The LLM starts with ML knowledge and reads the training curves to understand *wh
 
 ## Fallback behavior
 
-If the LLM returns invalid JSON, times out, or the API is down, the system silently generates random configs from the search space. A fallback counter tracks how often this happens. No exceptions propagate — the search continues no matter what.
+The model's answer must match a JSON schema built from the search space (structured outputs, where
+the API supports it). Each config is still checked: numbers are clamped into their range, a number
+between two numeric choices snaps to the nearest one (96 becomes 128 for `[64, 128, 256]`), and a
+string that differs only in case matches its choice. A config that is still invalid is replaced by a
+random one; the other configs in the answer are kept. If the whole answer is unusable, or the API is
+down, all configs for that round are random.
+
+Nothing raises: the search keeps going. But every eval's source (`llm`, `random`, `initial`) is
+logged, and the end-of-run summary says how many configs were random and warns when it is more than
+10%, so a broken key or model doesn't quietly turn into random search.
 
 ## LLM backends
 
 Auto-detected in order:
 
-| Backend | How | Overhead |
-|---------|-----|----------|
-| Claude (Haiku 4.5) | `ANTHROPIC_API_KEY` env var | ~1s/call, cheapest option |
-| OpenAI | `OPENAI_API_KEY` env var | ~1-2s/call |
-| Local Qwen 2.5 1.5B | `--backend qwen` | ~3s/call, runs on CPU |
-| Random search | `--backend none` | Baseline comparison |
+| Backend | How | Notes |
+|---------|-----|-------|
+| OpenAI-compatible server | `NEUROPT_LLM_BASE_URL` + `NEUROPT_MODEL`, or `--base-url` / `--model` | Ollama, vLLM, llama.cpp, LM Studio, OpenRouter |
+| Claude | `ANTHROPIC_API_KEY` | Claude Haiku 4.5 by default; 2.7 to 4.0 s per call in the [harness](evals.md) |
+| OpenAI | `OPENAI_API_KEY` | GPT-4o mini by default |
+| Random search | `--backend none`, or nothing configured | Baseline; the run header says so |
+
+`--model` (or `NEUROPT_MODEL`) picks the model; a `claude-*` model selects the Claude backend. The
+old local Qwen 2.5 1.5B backend (`--backend qwen`) is deprecated and no longer auto-detected; run a
+local model behind Ollama or vLLM instead.

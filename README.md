@@ -155,7 +155,7 @@ See the [full documentation](https://loevlie.github.io/neuropt/) for:
 ```bash
 pip install neuropt                  # core
 pip install "neuropt[llm]"           # + Claude API (recommended)
-pip install "neuropt[llm-openai]"    # + OpenAI API
+pip install "neuropt[llm-openai]"    # + OpenAI API, or a local model through Ollama / vLLM
 pip install "neuropt[all]"           # everything
 ```
 
