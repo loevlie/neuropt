@@ -149,6 +149,40 @@ Verdicts by the decision rule, each neuropt arm against Optuna TPE with the same
 - Cost: a 30-eval XGBoost run with Claude Haiku 4.5 costs $0.61, eleven times the CNN run, because
   full 500-round boosting curves are put in every prompt.
 
+## Phase 2 plan (fixed 20 Nov 2026, before any v2 run)
+
+Package changes on this branch (`neuropt-v2-*` arms; the Phase 1 arms used 0.6.1):
+
+- One invalid config no longer discards the whole batch of 3. The Phase 1 MLP failures were
+  Claude Haiku 4.5 proposing `batch_size` 96 or 192 for choices [64, 128, 256, 512, 1024]
+  (8 of 10 replayed responses had at least one). Numbers between numeric choices now snap to the
+  nearest choice; other invalid configs are dropped and replaced by random ones, labelled as random.
+- Structured outputs: the answer must match a JSON schema built from the search space.
+- At most 20 points per curve in the prompt (was every boosting round, 500 on XGBoost).
+- The static part of the prompt is a cached system prompt (only effective on Haiku 5.5 here).
+
+Arms, 5 seeds, 30 evals, same tasks and seeds as Phase 1, each with and without the default first:
+`neuropt-v2-haiku-4.5`, `neuropt-v2-haiku-5.5`, `neuropt-v2-gpt-4o-mini`, `hybrid-v2-haiku-5.5`
+(9 Haiku 5.5 evals, then TPE warm-started with them), and `neuropt-v2-qwen3.5-9b` (local, Ollama on
+the RTX 4090) if it runs. The classical arms and Jev are not re-run: their code is unchanged apart
+from the random generator offset for `jev+default`.
+
+Decisions, by the Phase 1 rule (mean lower and better on at least 4 of 5 paired seeds):
+
+1. **v2 code vs 0.6.1** (`neuropt-v2-haiku-4.5` vs `neuropt-haiku-4.5`, both seedings): the changes
+   are kept if v2 is not worse on any task. If it is worse somewhere, the curve cap is reverted to
+   off by default and that is reported.
+2. **Claude default model**: Haiku 5.5 replaces Haiku 4.5 if `neuropt-v2-haiku-5.5` is not worse than
+   `neuropt-v2-haiku-4.5` on any task in either seeding. Cost is reported next to it.
+3. **OpenAI default model**: only GPT-4o mini is tested, so it stays the OpenAI default; its Phase 1
+   weakness is reported, and Claude stays first in auto-detection.
+4. **Hybrid**: offered in the harness only; it would go into the package only if it helps over
+   `neuropt-v2-haiku-5.5` on at least 2 of 3 tasks and is not worse on the third.
+5. **Default first** (`from_model(start_from_model=True)`): decided from Phase 1. For the three neuropt
+   arms, `+default` against the same arm from scratch helps in 6 of 9 arm-task pairs and is never worse
+   (no measurable difference in the other 3), so it is on by default for neuropt. (For Optuna TPE it
+   helps on the CNN but is worse on XGBoost, 1 / 4 seeds.)
+
 **Caveats.**
 
 - The CNN ran on an RTX 4090; XGBoost and the MLP ran on an M1 Max, two tasks at a time, so their
