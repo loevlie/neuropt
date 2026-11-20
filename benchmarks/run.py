@@ -136,7 +136,8 @@ def run_one(task, evaluate, method, seed, n_evals, runs_dir, timeout, device, ba
     summary = {
         "type": "summary", "task": task.name, "method": method, "seed": seed, "n_evals": n_evals,
         "wall_time": time.time() - start, "train_time": sum(r["elapsed"] for r in log.rows),
-        "llm": llm, "device": device, "host": platform.node(), "timeout": timeout,
+        "llm": llm, "device": device, "timeout": timeout,
+        "host": os.environ.get("NEUROPT_BENCH_HOST") or platform.machine(),  # a label, not the hostname
         "date": time.strftime("%Y-%m-%d %H:%M:%S"), "versions": _versions(),
     }
     os.makedirs(os.path.dirname(path), exist_ok=True)

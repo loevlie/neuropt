@@ -180,46 +180,56 @@ def plot(runs, out_dir):
     os.makedirs(out_dir, exist_ok=True)
     tasks = [t for t in TASKS if t in runs]
 
-    def draw(ax, task_name, key):
-        lo, hi = [], []
+    def draw(ax, task_name, key, seeded):
+        tops, n = [], 0
         for method in _order(runs[task_name]):
             base, _, suffix = method.partition("+")
-            if base not in STYLE:
+            if base not in STYLE or bool(suffix) != seeded:
                 continue
             label, color, marker = STYLE[base]
             curves = np.array([r[key] for r in runs[task_name][method]])
-            mean, std = curves.mean(0), curves.std(0, ddof=1) if len(curves) > 1 else 0 * curves[0]
+            mean = curves.mean(0)
+            std = curves.std(0, ddof=1) if len(curves) > 1 else np.zeros_like(mean)
             x = np.arange(1, len(mean) + 1)
-            ax.fill_between(x, mean - std, mean + std, color=color, alpha=0.10, lw=0)
-            ax.plot(x, mean, color=color, lw=2, ls="--" if suffix else "-", marker=marker, ms=4.5,
-                    markevery=5, label=label + (", default first" if suffix else ""))
-            lo.append(mean.min())
-            hi.append(mean[min(4, len(mean) - 1)])  # value at eval 5: keeps the early spike off-scale
-        pad = 0.08 * (max(hi) - min(lo) + 1e-9)
-        ax.set_ylim(min(lo) - pad, max(hi) + 3 * pad)
-        ax.set_xlim(1, len(mean))
-        ax.set_xticks([1] + [m for m in MILESTONES if m <= len(mean)])
+            n = len(mean)
+            ax.fill_between(x, mean - std, mean + std, color=color, alpha=0.08, lw=0)
+            ax.plot(x, mean, color=color, lw=2, marker=marker, ms=4.5, markevery=5, label=label)
+            tops.append(mean[min(4, n - 1)])  # value at eval 5: keeps the early spike off-scale
+        ax.set_xlim(1, n)
+        ax.set_xticks([1] + [m for m in MILESTONES if m <= n])
         ax.grid(axis="y", color=grid, lw=0.8)
         ax.tick_params(colors=muted)
         for spine in ax.spines.values():
             spine.set_color(grid)
+        return tops
 
+    rows = (("Search from scratch", False), ("Default config evaluated first", True))
     for key, name, ylabel in (("test", "test", "Test loss of the best-validation config"),
                               ("val", "val", "Best validation loss so far")):
-        fig, axes = plt.subplots(1, len(tasks), figsize=(5.2 * len(tasks), 4.6), squeeze=False)
-        for ax, task_name in zip(axes[0], tasks):
-            draw(ax, task_name, key)
+        fig, axes = plt.subplots(2, len(tasks), figsize=(4.9 * len(tasks), 7.6), squeeze=False,
+                                 sharey="col")
+        for col, task_name in enumerate(tasks):
+            tops = []
+            for row, (row_title, seeded) in enumerate(rows):
+                ax = axes[row][col]
+                tops += draw(ax, task_name, key, seeded)
+                ax.set_title(f"{TASKS[task_name].title}\n{row_title}", loc="left", color=ink,
+                             fontsize=10, fontweight="bold")
+            low = min(statistics.mean(r[key][-1] for r in rs) for rs in runs[task_name].values())
+            span = max(tops) - low
+            axes[0][col].set_ylim(low - 0.12 * span, max(tops) + 0.10 * span)
             n_seeds = min(len(rs) for rs in runs[task_name].values())
-            ax.set_title(TASKS[task_name].title, loc="left", color=ink, fontsize=10.5,
-                         fontweight="bold")
-            ax.set_xlabel(f"Evaluations used (mean of {n_seeds} seeds, band = ± 1 std)", color=muted)
-        axes[0][0].set_ylabel(ylabel + " (lower is better)", color=muted)
+            axes[1][col].set_xlabel(f"Evaluations used (mean of {n_seeds} seeds, band = ± 1 std)",
+                                    color=muted)
+        for row in range(2):
+            axes[row][0].set_ylabel(ylabel + "\n(lower is better)", color=muted)
         entries = {}
-        for ax in axes[0]:  # a method may be missing from some tasks
+        for ax in axes.flat:  # a method may be missing from some tasks
             for handle, label in zip(*ax.get_legend_handles_labels()):
                 entries.setdefault(label, handle)
-        fig.legend(entries.values(), entries.keys(), loc="lower center", ncol=4, frameon=False, fontsize=9)
-        fig.tight_layout(rect=(0, 0.12, 1, 1))
+        fig.legend(entries.values(), entries.keys(), loc="lower center", ncol=5, frameon=False,
+                   fontsize=9.5)
+        fig.tight_layout(rect=(0, 0.045, 1, 1))
         fig.savefig(os.path.join(out_dir, f"harness_{name}.png"), dpi=160)
         plt.close(fig)
 
