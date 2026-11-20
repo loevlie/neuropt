@@ -162,7 +162,8 @@ def _default_device():
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--tasks", nargs="+", default=list(TASKS), choices=list(TASKS))
-    parser.add_argument("--methods", nargs="+", default=ALL_METHODS)
+    parser.add_argument("--methods", nargs="+", default=ALL_METHODS, choices=ALL_METHODS,
+                        metavar="METHOD")
     parser.add_argument("--seeds", nargs="+", type=int, default=SEEDS)
     parser.add_argument("--n-evals", type=int, default=N_EVALS)
     parser.add_argument("--timeout", type=int, default=TIMEOUT, help="seconds per eval, all methods")

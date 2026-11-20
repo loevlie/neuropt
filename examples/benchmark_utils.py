@@ -1,4 +1,8 @@
-"""Shared helpers for the benchmark example scripts.
+"""LEGACY: single-seed demo script, superseded by the multi-seed harness in benchmarks/
+(python -m benchmarks.run). It scores on the split the optimizer sees and has no held-out
+test set, so its numbers are not comparable with the README or docs/evals.md.
+
+Shared helpers for the benchmark example scripts.
 
 Each benchmark script defines its own data setup, ``evaluate(cfg)`` function
 returning ``(loss, accuracy, elapsed, ...)``, and a neuropt-style search space

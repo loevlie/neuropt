@@ -1,4 +1,8 @@
 """
+LEGACY: single-seed demo script, superseded by the multi-seed harness in benchmarks/
+(python -m benchmarks.run). It scores on the split the optimizer sees and has no held-out
+test set, so its numbers are not comparable with the README or docs/evals.md.
+
 Benchmark: neuropt (Claude) vs Optuna TPE vs Random on XGBoost.
 
 Same evaluation budget, same search space, same data.

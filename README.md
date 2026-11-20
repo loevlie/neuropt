@@ -57,10 +57,6 @@ What this shows, using a rule fixed before the runs (better on average and on at
 
 Full protocol, per-run statistics (tokens, latency, parse failures) and the negative results are in [docs/evals.md](docs/evals.md). To reproduce: `python -m benchmarks.run && python -m benchmarks.plot`.
 
-<p align="center">
-  <img src="assets/search_combined_15.png" alt="2-param search: neuropt vs Optuna vs Random" width="700">
-</p>
-
 ## Quick start
 
 ```bash
