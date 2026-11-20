@@ -234,6 +234,114 @@ def plot(runs, out_dir):
         plt.close(fig)
 
 
+def plot_extra(runs, out_dir):
+    """Three more views: per-seed differences to TPE, score against LLM cost, and fallback rate."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    ink, muted, grid = "#1f1f1d", "#6b6a63", "#e6e4dc"
+    tasks = [t for t in TASKS if t in runs]
+    llm = [m for m in STYLE if m not in ("random", "tpe")]
+
+    def style(ax, title):
+        ax.set_title(title, loc="left", color=ink, fontsize=10, fontweight="bold")
+        ax.tick_params(colors=muted)
+        for spine in ax.spines.values():
+            spine.set_color(grid)
+
+    def final(task_name, method):
+        return {r["seed"]: r["test"][-1] for r in runs[task_name].get(method, [])}
+
+    # 1. Per-seed difference to Optuna TPE with the same seeding
+    arms = [m + suffix for m in llm for suffix in ("", "+default")]
+    fig, axes = plt.subplots(1, len(tasks), figsize=(4.9 * len(tasks), 4.4), squeeze=False, sharey=True)
+    for ax, task_name in zip(axes[0], tasks):
+        for y, arm in enumerate(reversed(arms)):
+            base, _, suffix = arm.partition("+")
+            a, b = final(task_name, arm), final(task_name, "tpe" + ("+default" if suffix else ""))
+            diffs = [a[s] - b[s] for s in sorted(set(a) & set(b))]
+            if not diffs:
+                continue
+            color = STYLE[base][1]
+            jitter = np.linspace(-0.16, 0.16, len(diffs))
+            ax.scatter(diffs, y + jitter, s=42, color=color if not suffix else "white",
+                       edgecolor=color, linewidth=1.6, zorder=3)
+            ax.plot([np.mean(diffs)] * 2, [y - 0.32, y + 0.32], color=ink, lw=2, zorder=4)
+        ax.axvline(0, color=muted, lw=1)
+        ax.set_yticks(range(len(arms)))
+        ax.set_yticklabels([STYLE[m.partition("+")[0]][0].replace("neuropt, ", "")
+                            + (", default first" if "+" in m else "") for m in reversed(arms)])
+        ax.grid(axis="x", color=grid, lw=0.8)
+        ax.set_xlabel("Test loss minus Optuna TPE's, same seed\n(left of 0 = neuropt better)", color=muted)
+        style(ax, TASKS[task_name].title)
+    fig.suptitle("Each dot is one seed after 30 evals; the bar is the mean. Hollow dots: default config "
+                 "evaluated first, compared with default-seeded TPE.", x=0.01, ha="left", fontsize=9.5,
+                 color=muted)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.savefig(os.path.join(out_dir, "harness_paired.png"), dpi=160)
+    plt.close(fig)
+
+    # 2. Final test loss against LLM cost per run
+    fig, axes = plt.subplots(1, len(tasks), figsize=(4.9 * len(tasks), 4.4), squeeze=False)
+    for ax, task_name in zip(axes[0], tasks):
+        for suffix, ls in (("", "-"), ("+default", "--")):
+            ref = list(final(task_name, "tpe" + suffix).values())
+            if ref:
+                ax.axhline(np.mean(ref), color=STYLE["tpe"][1], lw=1.6, ls=ls,
+                           label="Optuna TPE" + (", default first" if suffix else "") + " (no LLM cost)")
+        for base in llm:
+            for suffix in ("", "+default"):
+                rs = runs[task_name].get(base + suffix, [])
+                if not rs:
+                    continue
+                cost = np.mean([(r["summary"]["llm"] or {}).get("cost_usd") or 0 for r in rs])
+                vals = [r["test"][-1] for r in rs]
+                color = STYLE[base][1]
+                ax.errorbar(cost, np.mean(vals), yerr=np.std(vals, ddof=1), color=color, lw=1.2,
+                            marker=STYLE[base][2], ms=8, mfc="white" if suffix else color, mec=color,
+                            mew=1.6, capsize=3,
+                            label=STYLE[base][0] + (", default first" if suffix else ""))
+        ax.set_xscale("log")
+        ax.set_xlim(2e-3, 2)
+        ax.grid(axis="y", color=grid, lw=0.8)
+        ax.set_xlabel("LLM cost per 30-eval run (USD, log scale)", color=muted)
+        style(ax, TASKS[task_name].title)
+    axes[0][0].set_ylabel("Test loss after 30 evals\n(mean ± std over seeds, lower is better)", color=muted)
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=4, frameon=False, fontsize=9)
+    fig.tight_layout(rect=(0, 0.12, 1, 1))
+    fig.savefig(os.path.join(out_dir, "harness_cost.png"), dpi=160)
+    plt.close(fig)
+
+    # 3. Share of evals that fell back to random configs because the model's answer was unusable
+    fig, ax = plt.subplots(figsize=(7.2, 3.6))
+    width = 0.8 / len(llm)
+    for i, base in enumerate(llm):
+        shares = []
+        for task_name in tasks:
+            rs = runs[task_name].get(base, []) + runs[task_name].get(base + "+default", [])
+            evals = sum(len(r["rows"]) for r in rs)
+            fallback = sum((r["summary"]["llm"] or {}).get("fallback_evals", 0) for r in rs)
+            shares.append(100 * fallback / evals if evals else 0)
+        x = np.arange(len(tasks)) + (i - (len(llm) - 1) / 2) * width
+        bars = ax.bar(x, shares, width * 0.9, color=STYLE[base][1], label=STYLE[base][0])
+        for rect, share in zip(bars, shares):
+            ax.text(rect.get_x() + rect.get_width() / 2, share + 0.4, f"{share:.0f}%", ha="center",
+                    va="bottom", fontsize=9, color=ink)
+    ax.set_xticks(range(len(tasks)))
+    ax.set_xticklabels([TASKS[t].title.split(" (")[0] for t in tasks])
+    ax.set_ylabel("Evals run as random fallback (%)", color=muted)
+    ax.grid(axis="y", color=grid, lw=0.8)
+    ax.set_axisbelow(True)
+    ax.legend(frameon=False, fontsize=9)
+    style(ax, "How often the model's answer was unusable (10 runs x 30 evals per bar)")
+    fig.tight_layout()
+    fig.savefig(os.path.join(out_dir, "harness_fallback.png"), dpi=160)
+    plt.close(fig)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--runs-dir", default=RUNS_DIR)
@@ -246,6 +354,7 @@ def main(argv=None):
         return 1
     write_tables(runs, args.tables)
     plot(runs, args.out_dir)
+    plot_extra(runs, args.out_dir)
     print(f"wrote {args.tables} and figures in {args.out_dir}")
     return 0
 
