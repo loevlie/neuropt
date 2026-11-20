@@ -61,8 +61,10 @@ class ArchSearch:
     # Labels used in console output; DecisionSearch overrides them.
     _title = "LLM-Guided Search"
     _decider_label = "LLM"
-    # Show at most this many epochs per curve in the state (None = all).
-    _max_curve_points = None
+    # Show at most this many epochs per curve in the state (None = all), evenly
+    # spaced and always including the first and last. Long curves (500 boosting
+    # rounds) otherwise dominate the prompt's size and cost.
+    _max_curve_points = 20
 
     @classmethod
     def from_model(cls, model, train_fn, backend="auto", pretrained=None, **kwargs):
@@ -241,7 +243,8 @@ class ArchSearch:
         # Per-call counters for evaluation: how often the backend was called,
         # failed to parse or errored, and how many proposed configs were duplicates.
         self.stats = {"llm_calls": 0, "parse_failures": 0, "llm_errors": 0,
-                      "proposed_configs": 0, "duplicate_configs": 0, "retries": 0}
+                      "proposed_configs": 0, "invalid_configs": 0, "duplicate_configs": 0,
+                      "retries": 0}
 
     @classmethod
     def _resolve_backend_for(cls, backend):
@@ -330,6 +333,7 @@ class ArchSearch:
                     run_cfg["device"] = self.device
 
                 result = self._run_one(run_cfg)
+                cfg_source = source[idx] if isinstance(source, list) else source
 
                 improved = ""
                 if self._is_better(result["score"]):
@@ -338,7 +342,7 @@ class ArchSearch:
                     self.best_accuracy = _get_accuracy(result)
                     improved = " *** NEW BEST ***"
 
-                logger.log(iteration, cfg, result, source)
+                logger.log(iteration, cfg, result, cfg_source)
                 history.append({
                     "id": self.total_experiments + 1,
                     "config": cfg,
@@ -355,7 +359,7 @@ class ArchSearch:
                 status_s = f" [{result['status']}]" if result["status"] != "ok" else ""
                 cfg_s = _short_config(cfg)
                 print(f"  [{iteration}.{idx}] {cfg_s} → {result['score']:.4f}"
-                      f"{extra} {result['elapsed']:.1f}s [{source}]{status_s}{improved}")
+                      f"{extra} {result['elapsed']:.1f}s [{cfg_source}]{status_s}{improved}")
 
             if self._shutdown:
                 break
@@ -375,23 +379,25 @@ class ArchSearch:
     MAX_RETRIES = 3
 
     def _get_configs(self, history, rng):
-        """Ask LLM for configs with retry loop for duplicates."""
+        """Ask the LLM for configs, re-asking when it repeats itself.
+
+        Returns ``(configs, sources)``: one source per config, ``"llm"`` for
+        configs the model proposed and ``"random"`` for random ones (a short or
+        partly invalid answer is topped up; duplicates left after the last retry
+        are replaced), so the log shows exactly which evals the model chose.
+        """
         if self._backend is None:
             return [_random_config(self.search_space, rng)
                     for _ in range(self.batch_size)], "random"
 
-        prompt = self._build_prompt(history)
+        system, prompt = self._build_state_parts(history)
+        prompt = prompt + "\n" + self._task_text()
 
         for attempt in range(self.MAX_RETRIES):
             try:
-                response = self._backend.generate(prompt, max_tokens=2048)
+                response = self._generate(system, prompt)
                 self.stats["llm_calls"] += 1
                 configs = self._parse_response(response)
-                if configs is not None:
-                    self.stats["proposed_configs"] += len(configs)
-                    # Top up a short (but valid) answer with random configs
-                    while len(configs) < self.batch_size:
-                        configs.append(_random_config(self.search_space, rng))
 
                 if configs is None:
                     self.stats["parse_failures"] += 1
@@ -401,26 +407,35 @@ class ArchSearch:
                     print(f"  [LLM parse failed, using random] response preview: {snippet}")
                     break
 
+                self.stats["proposed_configs"] += len(configs)
+                sources = ["llm"] * len(configs)
+                # Top up a short or partly invalid answer with random configs
+                while len(configs) < self.batch_size:
+                    configs.append(_random_config(self.search_space, rng))
+                    sources.append("random")
+
                 # Check for duplicates against history
                 dupes = self._find_duplicates(configs, history)
                 self.stats["duplicate_configs"] += len(dupes)
                 if not dupes:
                     self.llm_success += 1
-                    return configs, "llm"
+                    return configs, sources
 
                 # Tell the LLM what it repeated and ask for something new
                 if attempt < self.MAX_RETRIES - 1:
                     self.stats["retries"] += 1
                     print(f"  [retry {attempt+1}: {len(dupes)} duplicate configs, asking LLM to adjust]")
                     prompt = self._build_retry_prompt(configs, dupes, history)
+                    system = None
                 else:
                     # Last attempt — keep non-duplicate configs, replace dupes with random
                     print(f"  [still {len(dupes)} duplicates after {self.MAX_RETRIES} tries, "
                           f"replacing with random]")
                     for i in dupes:
                         configs[i] = _random_config(self.search_space, rng)
+                        sources[i] = "random"
                     self.llm_success += 1
-                    return configs, "llm"
+                    return configs, sources
 
             except Exception as e:
                 self.stats["llm_errors"] += 1
@@ -430,6 +445,41 @@ class ArchSearch:
 
         return [_random_config(self.search_space, rng)
                 for _ in range(self.batch_size)], "random"
+
+    def _generate(self, system, prompt):
+        """Call the backend, with the response schema when it supports one.
+
+        Backends that subclass ``BaseLLMBackend`` get ``generate_structured``;
+        any other object only needs ``generate(prompt, max_tokens)``.
+        """
+        if hasattr(self._backend, "generate_structured"):
+            return self._backend.generate_structured(
+                prompt, system=system, schema=self._response_schema(), max_tokens=4096)
+        full = prompt if system is None else system + "\n" + prompt
+        return self._backend.generate(full, max_tokens=4096)
+
+    def _response_schema(self):
+        """JSON schema for one answer: ``{"configs": [config, ...]}``.
+
+        Categorical choices become ``enum``s. Numeric ranges can't be expressed
+        (structured outputs don't support minimum/maximum), so they are stated
+        in the description and clamped by ``_validate_config``.
+        """
+        props = {}
+        for name, dim in self.search_space.items():
+            if isinstance(dim, Categorical):
+                props[name] = {"enum": list(dim.choices)}
+            elif isinstance(dim, IntUniform):
+                props[name] = {"type": "integer",
+                               "description": f"integer in [{dim.low}, {dim.high}]"}
+            else:
+                props[name] = {"type": "number",
+                               "description": f"number in [{dim.low}, {dim.high}]"}
+        config = {"type": "object", "properties": props,
+                  "required": list(props), "additionalProperties": False}
+        return {"type": "object",
+                "properties": {"configs": {"type": "array", "items": config}},
+                "required": ["configs"], "additionalProperties": False}
 
     def _find_duplicates(self, configs, history):
         """Return indices of configs that match history OR each other in the batch."""
@@ -579,17 +629,27 @@ class ArchSearch:
         Shared by the LLM prompt and the decision-model state, so both see the
         same evidence.
         """
-        parts = [self.ml_context.strip(), ""]
+        return "\n".join(self._build_state_parts(history))
 
-        # Search space
+    def _build_state_parts(self, history):
+        """The state split in two: a part that is the same on every call (context,
+        config space, score direction), which backends send as a cacheable system
+        prompt, and the part that changes (best result, history, curves)."""
+        return self._static_state(), self._dynamic_state(history)
+
+    def _static_state(self):
+        parts = [self.ml_context.strip(), ""]
         parts.append("## Config Space\n")
         parts.append("Each config is a JSON object with these keys:")
         for name, dim in self.search_space.items():
             parts.append(_describe_dim(name, dim))
         parts.append("")
-
         direction = "lower is better" if self.minimize else "higher is better"
         parts.append(f"Score direction: {direction}\n")
+        return "\n".join(parts)
+
+    def _dynamic_state(self, history):
+        parts = []
 
         # Best result
         if self.best_config is not None:
@@ -705,21 +765,23 @@ class ArchSearch:
     def _parse_response(self, response):
         """Parse LLM JSON into validated configs.
 
-        Returns up to ``batch_size`` configs (extras are dropped), or None if
-        there is no JSON array, it is empty, or any config is invalid.
+        Accepts a JSON array of configs or an object ``{"configs": [...]}``
+        (the structured-output shape). Invalid configs are dropped and counted
+        in ``stats["invalid_configs"]``; the valid ones are kept (at most
+        ``batch_size``). Returns None if nothing usable is found.
         """
         configs = extract_json(response, "[")
         if not configs:
             return None
-        configs = configs[:self.batch_size]
 
         validated = []
         for cfg in configs:
             cleaned = _validate_config(cfg, self.search_space)
             if cleaned is None:
-                return None
-            validated.append(cleaned)
-        return validated
+                self.stats["invalid_configs"] += 1
+            else:
+                validated.append(cleaned)
+        return validated[:self.batch_size] or None
 
     # ── Signal handling ────────────────────────────────────────────────────
 
@@ -1019,6 +1081,8 @@ def _validate_config(cfg, search_space):
                     val = bool(val)
             choice = _match_choice(val, dim.choices)
             if choice is _NO_MATCH:
+                choice = _nearest_choice(val, dim.choices)
+            if choice is _NO_MATCH:
                 return None
             cleaned[name] = choice
         elif isinstance(dim, IntUniform):
@@ -1063,6 +1127,23 @@ def _match_choice(val, choices):
         except Exception:
             continue
     return _NO_MATCH
+
+
+def _nearest_choice(val, choices):
+    """Snap a near miss to a choice: a string that differs only in case or
+    surrounding spaces, or a number between numeric choices (nearest on a log
+    scale when everything is positive, e.g. 96 -> 128 for [64, 128, 256]).
+    Returns ``_NO_MATCH`` otherwise."""
+    if isinstance(val, str):
+        hits = [c for c in choices if isinstance(c, str) and c.strip().lower() == val.strip().lower()]
+        return hits[0] if len(hits) == 1 else _NO_MATCH
+    numeric = [c for c in choices if isinstance(c, (int, float)) and not isinstance(c, bool)]
+    if (isinstance(val, bool) or not isinstance(val, (int, float)) or not math.isfinite(val)
+            or len(numeric) != len(choices) or not numeric):
+        return _NO_MATCH
+    if val > 0 and all(c > 0 for c in numeric):
+        return min(numeric, key=lambda c: abs(math.log(c / val)))
+    return min(numeric, key=lambda c: abs(c - val))
 
 
 def _fmt(v):

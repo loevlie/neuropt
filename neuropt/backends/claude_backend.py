@@ -24,17 +24,35 @@ _PRICING = {
 }
 
 
+DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+
+
 class ClaudeBackend(BaseLLMBackend):
     """Claude via the Messages API.
 
-    The default stays on Claude Haiku 4.5 because the published benchmarks
-    were run with it; pass ``model=...`` to use another Claude model.
+    The static part of the prompt is sent as a cached system prompt, and the
+    answer is constrained to the caller's JSON schema (structured outputs)
+    when one is given. Caching only takes effect above the model's minimum
+    prompt length (4096 tokens on Haiku 4.5, 512 on the 5.5 models), so for
+    short prompts it is a no-op, not an extra cost.
+
+    Args:
+        model: Model id. Defaults to ``$NEUROPT_MODEL`` if it names a Claude
+            model, else Claude Haiku 4.5.
     """
 
-    def __init__(self, model: str = "claude-haiku-4-5-20251001"):
+    def __init__(self, model: str | None = None):
         super().__init__()
-        self._model = model
+        env = os.environ.get("NEUROPT_MODEL", "")
+        self._model = model or (env if env.startswith("claude") else DEFAULT_MODEL)
         self._client = None
+        self._structured = True  # switched off if the model rejects output_config
+        self.cache_write_tokens = 0
+        self.cache_read_tokens = 0
+
+    @property
+    def name(self) -> str:
+        return f"ClaudeBackend({self._model})"
 
     def _get_client(self):
         if self._client is None:
@@ -43,14 +61,33 @@ class ClaudeBackend(BaseLLMBackend):
         return self._client
 
     def generate(self, prompt: str, max_tokens: int = 1024) -> str:
-        client = self._get_client()
-        message = client.messages.create(
-            model=self._model,
-            max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        self.total_input_tokens += message.usage.input_tokens
-        self.total_output_tokens += message.usage.output_tokens
+        return self.generate_structured(prompt, max_tokens=max_tokens)
+
+    def generate_structured(self, prompt, system=None, schema=None, max_tokens=1024):
+        kwargs = dict(model=self._model, max_tokens=max_tokens,
+                      messages=[{"role": "user", "content": prompt}])
+        if system:
+            kwargs["system"] = [{"type": "text", "text": system,
+                                 "cache_control": {"type": "ephemeral"}}]
+        if schema is not None and self._structured:
+            # Passed through extra_body so older SDK versions can send it too
+            kwargs["extra_body"] = {"output_config": {
+                "format": {"type": "json_schema", "schema": schema}}}
+        try:
+            message = self._get_client().messages.create(**kwargs)
+        except Exception as e:
+            if "extra_body" not in kwargs or not _rejects_structured(e):
+                raise
+            print(f"  [{self._model} does not accept structured outputs; "
+                  "continuing with plain JSON instructions]")
+            self._structured = False
+            del kwargs["extra_body"]
+            message = self._get_client().messages.create(**kwargs)
+        usage = message.usage
+        self.total_input_tokens += usage.input_tokens
+        self.total_output_tokens += usage.output_tokens
+        self.cache_write_tokens += getattr(usage, "cache_creation_input_tokens", 0) or 0
+        self.cache_read_tokens += getattr(usage, "cache_read_input_tokens", 0) or 0
         return "".join(block.text for block in message.content if block.type == "text")
 
     def is_available(self) -> bool:
@@ -66,5 +103,16 @@ class ClaudeBackend(BaseLLMBackend):
         if prices is None:
             return None
         input_price, output_price = prices
-        return (self.total_input_tokens * input_price +
-                self.total_output_tokens * output_price) / 1_000_000
+        # input_tokens excludes cached tokens: writes cost 1.25x, reads 0.1x (5-minute cache)
+        return (self.total_input_tokens * input_price
+                + getattr(self, "cache_write_tokens", 0) * input_price * 1.25
+                + getattr(self, "cache_read_tokens", 0) * input_price * 0.1
+                + self.total_output_tokens * output_price) / 1_000_000
+
+
+def _rejects_structured(error):
+    """True if an API error says the request's output format isn't supported."""
+    status = getattr(error, "status_code", None)
+    text = str(error).lower()
+    return status == 400 and ("output_config" in text or "output format" in text
+                              or "structured" in text or "json_schema" in text)

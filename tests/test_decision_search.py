@@ -349,8 +349,15 @@ class TestCurveDownsampling:
         assert [ln.split(":")[0] for ln in state.splitlines() if ln.startswith("  ep")] == \
             ["  ep1", "  ep2", "  ep3", "  ep4", "  ep5"]
 
-    def test_archsearch_prompt_keeps_every_epoch(self, tmp_log):
+    def test_archsearch_prompt_caps_curves_at_20(self, tmp_log):
         search = ArchSearch(train_fn, SPACE, backend="none", log_path=tmp_log)
+        state = search._build_state(self._history())
+        assert sum(line.startswith("  ep") for line in state.splitlines()) == 20
+        assert "  ep1:" in state and "  ep500:" in state  # first and last kept
+
+    def test_archsearch_curve_cap_can_be_lifted(self, tmp_log):
+        search = ArchSearch(train_fn, SPACE, backend="none", log_path=tmp_log)
+        search._max_curve_points = None
         state = search._build_state(self._history())
         assert sum(line.startswith("  ep") for line in state.splitlines()) == 500
 
