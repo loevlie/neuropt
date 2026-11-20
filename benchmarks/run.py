@@ -199,6 +199,8 @@ def main(argv=None):
     for method, seed in todo:
         if method in skipped:
             continue
+        if is_complete(run_path(args.runs_dir, task.name, method, seed)):
+            continue  # finished meanwhile by another process
         print(f"  {task.name} / {method} / seed {seed}", flush=True)
         try:
             s = run_one(task, evaluate, method, seed, args.n_evals, args.runs_dir, args.timeout, device)

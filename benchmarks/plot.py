@@ -187,7 +187,14 @@ def write_tables(runs, path):
         f.write("\n".join(lines))
 
 
-def plot(runs, out_dir):
+# Methods in each figure (base names; "+default" variants go in the second row)
+FIGURE_PHASE1 = ["random", "tpe", "neuropt-haiku-4.5", "neuropt-gpt-4o-mini", "jev"]
+FIGURE_CURRENT = ["random", "tpe", "neuropt-v2-haiku-5.5", "neuropt-v2-haiku-4.5",
+                  "neuropt-v2-gpt-4o-mini", "jev", "hybrid-v2-haiku-5.5"]
+
+
+def plot(runs, out_dir, methods=None, suffix=""):
+    """Test and validation curves; ``methods`` limits the figure to those base methods."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -203,7 +210,7 @@ def plot(runs, out_dir):
         tops, n = [], 0
         for method in _order(runs[task_name]):
             base, _, suffix = method.partition("+")
-            if base not in STYLE or bool(suffix) != seeded:
+            if base not in STYLE or bool(suffix) != seeded or (methods and base not in methods):
                 continue
             label, color, marker = STYLE[base]
             curves = np.array([r[key] for r in runs[task_name][method]])
@@ -234,10 +241,12 @@ def plot(runs, out_dir):
                 tops += draw(ax, task_name, key, seeded)
                 ax.set_title(f"{TASKS[task_name].title}\n{row_title}", loc="left", color=ink,
                              fontsize=10, fontweight="bold")
-            low = min(statistics.mean(r[key][-1] for r in rs) for rs in runs[task_name].values())
+            shown = {m: rs for m, rs in runs[task_name].items()
+                     if not methods or m.partition("+")[0] in methods}
+            low = min(statistics.mean(r[key][-1] for r in rs) for rs in shown.values())
             span = max(tops) - low
             axes[0][col].set_ylim(low - 0.12 * span, max(tops) + 0.10 * span)
-            n_seeds = min(len(rs) for rs in runs[task_name].values())
+            n_seeds = min(len(rs) for rs in shown.values())
             axes[1][col].set_xlabel(f"Evaluations used (mean of {n_seeds} seeds, band = ± 1 std)",
                                     color=muted)
         for row in range(2):
@@ -249,7 +258,7 @@ def plot(runs, out_dir):
         fig.legend(entries.values(), entries.keys(), loc="lower center", ncol=5, frameon=False,
                    fontsize=9.5)
         fig.tight_layout(rect=(0, 0.045, 1, 1))
-        fig.savefig(os.path.join(out_dir, f"harness_{name}.png"), dpi=160)
+        fig.savefig(os.path.join(out_dir, f"harness_{name}{suffix}.png"), dpi=160)
         plt.close(fig)
 
 
@@ -372,7 +381,8 @@ def main(argv=None):
         print(f"no complete runs in {args.runs_dir}")
         return 1
     write_tables(runs, args.tables)
-    plot(runs, args.out_dir)
+    plot(runs, args.out_dir, FIGURE_PHASE1, "_phase1")
+    plot(runs, args.out_dir, FIGURE_CURRENT)
     plot_extra(runs, args.out_dir)
     print(f"wrote {args.tables} and figures in {args.out_dir}")
     return 0
