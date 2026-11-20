@@ -67,7 +67,8 @@ class ArchSearch:
     _max_curve_points = 20
 
     @classmethod
-    def from_model(cls, model, train_fn, backend="auto", pretrained=None, **kwargs):
+    def from_model(cls, model, train_fn, backend="auto", pretrained=None, start_from_model=True,
+                   **kwargs):
         """Create a search by introspecting a model.
 
         Works with PyTorch nn.Module (swaps activations, dropout, batch norm,
@@ -85,20 +86,36 @@ class ArchSearch:
             pretrained: Override pretrained detection for PyTorch models.
                 If True/False, skips auto-detection. If None (default),
                 auto-detects by checking parameter statistics.
+            start_from_model: Evaluate the model's own settings first (default
+                True), so the search starts from a known baseline. On the
+                benchmark harness, a sensible first config mattered as much as
+                the optimizer (docs/evals.md). For PyTorch models lr / wd /
+                optimizer have no current value and start at AdamW, 1e-3, 1e-4.
+                Ignored if ``initial_configs`` is given.
             **kwargs: Passed to __init__ (log_path, batch_size, device, etc).
         """
         from neuropt.introspect import is_sklearn_compatible
 
         if is_sklearn_compatible(model):
-            return cls._from_sklearn_model(model, train_fn, backend, **kwargs)
+            search = cls._from_sklearn_model(model, train_fn, backend, **kwargs)
+            if start_from_model and "initial_configs" not in kwargs:
+                from neuropt.introspect import current_sklearn_config
+                current = current_sklearn_config(model, search.search_space)
+                if current:  # all None: nothing to start from
+                    search._set_initial([current])
         else:
-            return cls._from_pytorch_model(model, train_fn, backend, pretrained=pretrained, **kwargs)
+            search = cls._from_pytorch_model(model, train_fn, backend, pretrained=pretrained,
+                                             **kwargs)
+            if start_from_model and "initial_configs" not in kwargs:
+                search._set_initial([search._current_config])
+        return search
 
     @classmethod
     def _from_pytorch_model(cls, model, train_fn, backend, pretrained=None, **kwargs):
         from neuropt.introspect import (
             build_ml_context,
             build_search_space,
+            current_pytorch_config,
             introspect,
             make_wrapped_train_fn,
         )
@@ -135,13 +152,15 @@ class ArchSearch:
         print(f"  Search space: {list(search_space.keys())}")
         print()
 
-        return cls(
+        search = cls(
             train_fn=wrapped_fn,
             search_space=search_space,
             backend=backend,
             ml_context=ml_context,
             **kwargs,
         )
+        search._current_config = current_pytorch_config(info, search.search_space)
+        return search
 
     @classmethod
     def _from_sklearn_model(cls, model, train_fn, backend, **kwargs):
@@ -190,6 +209,7 @@ class ArchSearch:
         ml_context: str | None = None,
         minimize: bool = True,
         seed: int | None = None,
+        initial_configs: list | None = None,
     ):
         """
         Args:
@@ -218,6 +238,11 @@ class ArchSearch:
                 If False, higher scores are better (accuracy, AUROC).
             seed: Seed for the random configs this search draws (random
                 fallback, decision-model sampling). Default 42.
+            initial_configs: Configs to evaluate before asking the model, e.g.
+                your current settings. Values are checked against the search
+                space (snapped / clamped); keys may be left out to keep
+                whatever ``train_fn`` does by default. Configs already in the
+                log (on resume) are not run again.
         """
         self.train_fn = train_fn
         self.search_space = _normalize_search_space(search_space)
@@ -229,7 +254,9 @@ class ArchSearch:
         self.minimize = minimize
         self.seed = 42 if seed is None else seed
 
+        self._set_initial(initial_configs or [])
         self._backend = self._resolve_backend_for(backend)
+        self._backend_requested = backend
         self._shutdown = False
         self._warned_no_timeout = False
 
@@ -245,6 +272,17 @@ class ArchSearch:
         self.stats = {"llm_calls": 0, "parse_failures": 0, "llm_errors": 0,
                       "proposed_configs": 0, "invalid_configs": 0, "duplicate_configs": 0,
                       "retries": 0}
+        # Evals by where their config came from: llm / decision / random / initial
+        self.sources = {}
+
+    def _set_initial(self, configs):
+        cleaned = []
+        for cfg in configs:
+            c = _validate_partial(cfg, self.search_space)
+            if c is None:
+                raise ValueError(f"initial config {cfg!r} has no valid search-space values")
+            cleaned.append(c)
+        self.initial_configs = cleaned
 
     @classmethod
     def _resolve_backend_for(cls, backend):
@@ -308,11 +346,16 @@ class ArchSearch:
             print(f"  Best so far: score={self.best_score:.4f} acc={self.best_accuracy:.4f}")
         if not max_evals:
             print("  Ctrl+C to stop")
+        if self._backend is None and self._backend_requested == "auto":
+            print("  NOTE: no model backend found (no API key or server configured), so this "
+                  "is plain random search. See the README for backends.")
         print("=" * 60)
         print()
         evals_at_start = self.total_experiments
 
         rng = random.Random(self.seed + self.total_experiments)
+        tried = {_config_key(row.get("config", {})) for row in history}
+        pending = [c for c in self.initial_configs if _config_key(c) not in tried]
 
         while not self._shutdown:
             if max_evals and (self.total_experiments - evals_at_start) >= max_evals:
@@ -320,7 +363,11 @@ class ArchSearch:
 
             iter_start = time.time()
 
-            configs, source = self._get_configs(history, rng)
+            if pending:
+                configs, source = pending[:self.batch_size], "initial"
+                pending = pending[self.batch_size:]
+            else:
+                configs, source = self._get_configs(history, rng)
 
             for idx, cfg in enumerate(configs):
                 if self._shutdown:
@@ -334,6 +381,7 @@ class ArchSearch:
 
                 result = self._run_one(run_cfg)
                 cfg_source = source[idx] if isinstance(source, list) else source
+                self.sources[cfg_source] = self.sources.get(cfg_source, 0) + 1
 
                 improved = ""
                 if self._is_better(result["score"]):
@@ -831,6 +879,14 @@ class ArchSearch:
             print(f"  Best config: {json.dumps(self.best_config, default=str)}")
         if self._backend:
             print(f"  {self._decider_label}: {self.llm_success} ok, {self.llm_fallback} fallback")
+            proposed = sum(n for k, n in self.sources.items() if k != "initial")
+            rand = self.sources.get("random", 0)
+            if proposed:
+                print(f"  Configs this run: {proposed - rand} from the model, {rand} random "
+                      f"({100 * rand / proposed:.0f}% random)")
+                if rand / proposed > 0.1:
+                    print(f"  WARNING: {rand} of {proposed} configs were random because the "
+                          "model's answer failed or was unusable; see the [LLM ...] lines above.")
             tokens_in = self._backend.total_input_tokens
             tokens_out = self._backend.total_output_tokens
             if tokens_in or tokens_out:
@@ -1105,6 +1161,20 @@ def _validate_config(cfg, search_space):
 
 
 _NO_MATCH = object()
+
+
+def _validate_partial(cfg, search_space):
+    """Like ``_validate_config`` for the keys ``cfg`` has; other keys are left
+    out. Returns None if no key is valid."""
+    if not isinstance(cfg, dict):
+        return None
+    cleaned = {}
+    for name, val in cfg.items():
+        if name in search_space:
+            one = _validate_config({name: val}, {name: search_space[name]})
+            if one is not None:
+                cleaned.update(one)
+    return cleaned or None
 
 
 def _match_choice(val, choices):

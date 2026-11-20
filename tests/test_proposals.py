@@ -199,3 +199,126 @@ class TestOpenAIBackend:
         assert b.generate_structured("p", schema={"type": "object"}) == '{"configs": []}'
         assert "response_format" not in b._client.kwargs[-1]
         assert b.total_cost is None
+
+
+class TestInitialConfigs:
+    def test_evaluated_first_then_model(self, tmp_path):
+        backend = Canned([json.dumps([_cfg(lr=0.02), _cfg(lr=0.03), _cfg(lr=0.04)])])
+        s = _search(tmp_path, backend, initial_configs=[_cfg(lr=0.001, batch_size=100)])
+        s.run(max_evals=4)
+        rows = [json.loads(line) for line in open(tmp_path / "s.jsonl")]
+        assert [r["source"] for r in rows] == ["initial", "llm", "llm", "llm"]
+        assert rows[0]["config"]["batch_size"] == 128  # snapped into the space
+        assert "#1" in backend.calls[0] or "| 1 |" in backend.calls[0]  # the model sees it
+
+    def test_not_rerun_on_resume(self, tmp_path):
+        init = [_cfg(lr=0.001)]
+        _search(tmp_path, initial_configs=init).run(max_evals=2)
+        s = _search(tmp_path, initial_configs=init)
+        s.run(max_evals=1)
+        rows = [json.loads(line) for line in open(tmp_path / "s.jsonl")]
+        assert [r["source"] for r in rows] == ["initial", "random", "random"]
+
+    def test_partial_config_allowed(self, tmp_path):
+        s = _search(tmp_path, initial_configs=[{"lr": 0.5, "unknown": 1}])
+        assert s.initial_configs == [{"lr": 0.1}]  # clamped, unknown key dropped
+
+    def test_config_with_nothing_valid_rejected(self, tmp_path):
+        with pytest.raises(ValueError):
+            _search(tmp_path, initial_configs=[{"nope": 1}])
+
+
+class TestStartFromModel:
+    def test_sklearn_uses_estimator_params(self, tmp_path):
+        pytest.importorskip("sklearn")
+        from sklearn.ensemble import RandomForestClassifier
+        s = ArchSearch.from_model(RandomForestClassifier(n_estimators=40, max_depth=None),
+                                  lambda cfg: {"score": 0.5}, backend="none",
+                                  log_path=str(tmp_path / "s.jsonl"))
+        init = s.initial_configs[0]
+        assert "max_depth" not in init  # None = library default, left out
+        if "n_estimators" in s.search_space:
+            assert init["n_estimators"] == max(s.search_space["n_estimators"].low,
+                                               min(40, s.search_space["n_estimators"].high))
+
+    def test_pytorch_uses_model_and_textbook_training(self, tmp_path):
+        torch = pytest.importorskip("torch")
+        model = torch.nn.Sequential(torch.nn.Linear(4, 8), torch.nn.GELU(),
+                                    torch.nn.Dropout(0.3), torch.nn.Linear(8, 2))
+        s = ArchSearch.from_model(model, lambda cfg: {"score": 0.5}, backend="none",
+                                  log_path=str(tmp_path / "s.jsonl"))
+        init = s.initial_configs[0]
+        assert init["activation"] == "gelu" and init["dropout"] == pytest.approx(0.3)
+        assert (init["lr"], init["optimizer"]) == (1e-3, "adamw")
+
+    def test_can_be_turned_off(self, tmp_path):
+        torch = pytest.importorskip("torch")
+        model = torch.nn.Sequential(torch.nn.Linear(4, 2), torch.nn.ReLU())
+        s = ArchSearch.from_model(model, lambda cfg: {"score": 0.5}, backend="none",
+                                  log_path=str(tmp_path / "s.jsonl"), start_from_model=False)
+        assert s.initial_configs == []
+
+
+class TestFallbackVisibility:
+    def test_summary_warns_when_many_configs_are_random(self, tmp_path, capsys):
+        backend = Canned(["no json"] * 3)
+        _search(tmp_path, backend).run(max_evals=6)
+        out = capsys.readouterr().out
+        assert "0 from the model, 6 random (100% random)" in out and "WARNING" in out
+
+    def test_no_warning_when_model_answers(self, tmp_path, capsys):
+        backend = Canned([json.dumps([_cfg(lr=x / 100), _cfg(lr=x / 100 + 0.001),
+                                      _cfg(lr=x / 100 + 0.002)]) for x in range(1, 4)])
+        _search(tmp_path, backend).run(max_evals=6)
+        out = capsys.readouterr().out
+        assert "6 from the model, 0 random" in out and "WARNING" not in out
+
+    def test_auto_without_backend_says_random(self, tmp_path, capsys, monkeypatch):
+        import neuropt.backends as backends
+        monkeypatch.setattr(backends, "get_default_backend", lambda model=None: None)
+        ArchSearch(lambda c: {"score": c["lr"]}, SPACE, backend="auto",
+                   log_path=str(tmp_path / "s.jsonl")).run(max_evals=1)
+        assert "plain random search" in capsys.readouterr().out
+
+
+class TestCLIModelFlags:
+    def _run(self, tmp_path, monkeypatch, *args):
+        from typer.testing import CliRunner
+
+        import neuropt.backends as backends
+        from neuropt.cli import app
+        seen = {}
+
+        def fake_by_name(name, model=None):
+            import os
+            seen.update(name=name, model=os.environ.get("NEUROPT_MODEL"),
+                        url=os.environ.get("NEUROPT_LLM_BASE_URL"))
+            return None
+
+        monkeypatch.setattr(backends, "get_backend_by_name", fake_by_name)
+        monkeypatch.delenv("NEUROPT_MODEL", raising=False)
+        monkeypatch.delenv("NEUROPT_LLM_BASE_URL", raising=False)
+        script = tmp_path / "s.py"
+        script.write_text('search_space = {"x": (1, 10)}\n'
+                          'def train_fn(config): return {"score": config["x"]}\n')
+        result = CliRunner().invoke(app, ["run", str(script), "-n", "1",
+                                          "--log", str(tmp_path / "l.jsonl"), *args])
+        return result, seen
+
+    def test_base_url_selects_compatible_backend(self, tmp_path, monkeypatch):
+        result, seen = self._run(tmp_path, monkeypatch, "--model", "qwen2.5:7b",
+                                 "--base-url", "http://localhost:11434/v1")
+        assert result.exit_code == 0, result.output
+        assert seen == {"name": "openai-compatible", "model": "qwen2.5:7b",
+                        "url": "http://localhost:11434/v1"}
+
+    def test_model_with_named_backend(self, tmp_path, monkeypatch):
+        result, seen = self._run(tmp_path, monkeypatch, "--backend", "claude",
+                                 "--model", "claude-haiku-5-5")
+        assert result.exit_code == 0, result.output
+        assert seen["name"] == "claude" and seen["model"] == "claude-haiku-5-5"
+
+    def test_base_url_rejected_for_claude(self, tmp_path, monkeypatch):
+        result, _ = self._run(tmp_path, monkeypatch, "--backend", "claude",
+                              "--base-url", "http://x/v1")
+        assert result.exit_code == 1

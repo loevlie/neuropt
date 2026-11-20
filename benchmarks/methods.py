@@ -155,18 +155,17 @@ def run_tpe(task, log, seed, n_evals, seeded):
 
 
 def _run_search(search, backend, task, log, n_evals, seeded):
-    """Run an ArchSearch / DecisionSearch and collect its LLM statistics."""
-    if seeded:
-        # Evaluate the default first and put it in the search log, so the model
-        # sees it as experiment #1 exactly as it would after a resume.
-        result = search._run_one(dict(task.default))
-        log.rows[-1]["source"] = "default"
-        _JSONLLogger(search.log_path).log(-1, dict(task.default), result, "default")
-    search.run(max_evals=n_evals - log.n)
+    """Run an ArchSearch / DecisionSearch and collect its LLM statistics.
+
+    With ``seeded`` the search was built with ``initial_configs=[task.default]``,
+    so the package itself evaluates the default first.
+    """
+    search.run(max_evals=n_evals)
 
     # Which evals were proposed by the model and which were the random fallback
     for row, logged in zip(log.rows, _JSONLLogger(search.log_path).load_history()):
-        row["source"] = logged.get("source", "")
+        source = logged.get("source", "")
+        row["source"] = "default" if source == "initial" else source
 
     lat = backend.latencies
     return {
@@ -206,7 +205,8 @@ def run_neuropt(task, log, seed, n_evals, seeded, method, workdir, backend=None)
     backend = backend if isinstance(backend, RecordingLLM) else RecordingLLM(backend)
     search = ArchSearch(train_fn=_train_fn(log), search_space=task.space, backend=backend,
                         log_path=os.path.join(workdir, "search.jsonl"), batch_size=3, seed=seed,
-                        timeout=log.timeout * 10)  # the harness enforces the real time limit
+                        timeout=log.timeout * 10,  # the harness enforces the real time limit
+                        initial_configs=[dict(task.default)] if seeded else None)
     return _run_search(search, backend, task, log, n_evals, seeded)
 
 
@@ -225,7 +225,8 @@ def run_jev(task, log, seed, n_evals, seeded, workdir, backend=None):
         backend = RecordingDecision(backend)
     search = DecisionSearch(train_fn=_train_fn(log), search_space=task.space, backend=backend,
                             log_path=os.path.join(workdir, "search.jsonl"), batch_size=3, seed=seed,
-                            timeout=log.timeout * 10)
+                            timeout=log.timeout * 10,
+                            initial_configs=[dict(task.default)] if seeded else None)
     return _run_search(search, backend, task, log, n_evals, seeded)
 
 
