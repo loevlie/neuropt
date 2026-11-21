@@ -156,6 +156,8 @@ Works with PyTorch models, XGBoost, LightGBM, Random Forest, and any sklearn est
 |------|-------------|
 | `--backend claude` | Use Claude (default if `ANTHROPIC_API_KEY` is set) |
 | `--backend none` | Random search — no API key needed |
+| `--model claude-haiku-5-5` | Pick the model (or set `NEUROPT_MODEL`) |
+| `--base-url http://localhost:11434/v1 --model qwen3.5:9b` | A local model through Ollama, vLLM or any OpenAI-compatible server |
 | `-n 50` | Stop after 50 experiments |
 | `--log results.jsonl` | Custom log file (crash-safe, resumable) |
 | `--device cuda` | Force GPU device |

@@ -36,8 +36,8 @@ jobs:
 
       - name: Run tests
         run: |
-          uv add --dev pytest torch torchvision scikit-learn
-          uv run python -m pytest tests/test_core.py tests/test_decision_search.py -v
+          uv add --dev pytest torch torchvision scikit-learn optuna
+          uv run python -m pytest tests -v
 
       - name: Import check
         run: |

@@ -662,7 +662,7 @@ def build_sklearn_search_space_with_llm(info, backend):
         "Respond with ONLY the JSON object. No explanation."
     )
 
-    response = backend.generate(prompt, max_tokens=1024)
+    response = backend.generate(prompt, max_tokens=4096)  # room for models that think first
 
     ranges = extract_json(response, "{")
     if ranges is None:
@@ -786,3 +786,43 @@ def make_sklearn_wrapped_train_fn(model, train_fn):
         return train_fn(config_with_model)
 
     return wrapped
+
+
+# Training settings a model doesn't carry. The "current" config of a PyTorch
+# model uses these textbook values (the same as the benchmark harness default).
+TEXTBOOK_TRAINING = {"lr": 1e-3, "wd": 1e-4, "optimizer": "adamw"}
+_ACTIVATION_KEYS = {"ReLU": "relu", "GELU": "gelu", "SiLU": "silu", "LeakyReLU": "leaky_relu",
+                    "Mish": "mish", "Hardswish": "hardswish", "PReLU": "prelu"}
+
+
+def current_pytorch_config(info, space):
+    """The model as it is, as a config: its own activation, dropout rate, norm
+    and pooling, with ``TEXTBOOK_TRAINING`` for lr / wd / optimizer and plain
+    full fine-tuning for pretrained models. Keys whose current value can't be
+    expressed (mixed activations, per-group dropout) are left out, which the
+    wrapped train_fn treats as "leave the model unchanged"."""
+    cfg = dict(TEXTBOOK_TRAINING)
+    found = info.get("activations_found") or set()
+    if "activation" in space and len(found) == 1:
+        key = _ACTIVATION_KEYS.get(next(iter(found)))
+        if key is not None:
+            cfg["activation"] = key
+    if "dropout" in space and not any(k.startswith("dropout_") for k in space):
+        cfg["dropout"] = info.get("dropout_rate", 0.0)
+    if "use_batchnorm" in space:
+        cfg["use_batchnorm"] = True
+    if "use_layernorm" in space:
+        cfg["use_layernorm"] = True
+    if "pool_type" in space and info.get("pool_type"):
+        cfg["pool_type"] = info["pool_type"]
+    if info.get("is_pretrained"):
+        cfg.update(freeze_strategy="full", lr_layer_decay=1.0, l2sp_regularization=False)
+    return {k: v for k, v in cfg.items() if k in space}
+
+
+def current_sklearn_config(model, space):
+    """The estimator's own settings for the searched params. Params left at
+    None (library default, e.g. most of XGBoost's) are left out, so the
+    library's default applies when the config is trained."""
+    params = model.get_params()
+    return {k: params[k] for k in space if params.get(k) is not None}

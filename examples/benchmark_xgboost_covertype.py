@@ -1,4 +1,8 @@
 """
+LEGACY: single-seed demo script, superseded by the multi-seed harness in benchmarks/
+(python -m benchmarks.run). It scores on the split the optimizer sees and has no held-out
+test set, so its numbers are not comparable with the README or docs/evals.md.
+
 Benchmark: neuropt vs Optuna vs Random on XGBoost (Covertype).
 
 7-class classification, 54 features, 20k samples.
@@ -97,6 +101,8 @@ def main():
     parser.add_argument("--skip-random", action="store_true")
     parser.add_argument("--decision-url", default=None,
                         help="Also run DecisionSearch against this /v1/systemone server")
+    parser.add_argument("--decision-model", default=None,
+                        help="Model id for --decision-url (e.g. jev-latest for https://api.typesafe.ai)")
     parser.add_argument("--seed", type=int, default=42, help="Seed for every method's RNG")
     parser.add_argument("--log-dir", default="/tmp", help="Where search logs go")
     parser.add_argument("--out", default="benchmark_xgboost_covertype.json")
@@ -122,7 +128,7 @@ def main():
             all_results["Decision model"] = run_decision(
                 train_fn, SPACE, args.n_evals,
                 os.path.join(args.log_dir, f"bench_covtype_decision_s{args.seed}.jsonl"),
-                url=args.decision_url, seed=args.seed)
+                url=args.decision_url, model=args.decision_model, seed=args.seed)
         except Exception as e:
             print(f"  Skipped: {e}")
 

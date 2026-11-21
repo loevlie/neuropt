@@ -50,3 +50,9 @@ benchmark_suite_results.json
 /pso_results.png
 /pso_lightning_chat.ipynb
 /sa_lightning_chat.ipynb
+
+# Eval harness: keep the cached per-run results in git, ignore downloaded data
+!benchmarks/runs/**/*.jsonl
+benchmarks/data/
+benchmarks/.work/
+benchmarks/runs-smoke/

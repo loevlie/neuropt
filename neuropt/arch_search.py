@@ -61,11 +61,10 @@ class ArchSearch:
     # Labels used in console output; DecisionSearch overrides them.
     _title = "LLM-Guided Search"
     _decider_label = "LLM"
-    # Show at most this many epochs per curve in the state (None = all).
-    _max_curve_points = None
 
     @classmethod
-    def from_model(cls, model, train_fn, backend="auto", pretrained=None, **kwargs):
+    def from_model(cls, model, train_fn, backend="auto", pretrained=None, start_from_model=True,
+                   **kwargs):
         """Create a search by introspecting a model.
 
         Works with PyTorch nn.Module (swaps activations, dropout, batch norm,
@@ -83,20 +82,36 @@ class ArchSearch:
             pretrained: Override pretrained detection for PyTorch models.
                 If True/False, skips auto-detection. If None (default),
                 auto-detects by checking parameter statistics.
+            start_from_model: Evaluate the model's own settings first (default
+                True), so the search starts from a known baseline. On the
+                benchmark harness, a sensible first config mattered as much as
+                the optimizer (docs/evals.md). For PyTorch models lr / wd /
+                optimizer have no current value and start at AdamW, 1e-3, 1e-4.
+                Ignored if ``initial_configs`` is given.
             **kwargs: Passed to __init__ (log_path, batch_size, device, etc).
         """
         from neuropt.introspect import is_sklearn_compatible
 
         if is_sklearn_compatible(model):
-            return cls._from_sklearn_model(model, train_fn, backend, **kwargs)
+            search = cls._from_sklearn_model(model, train_fn, backend, **kwargs)
+            if start_from_model and "initial_configs" not in kwargs:
+                from neuropt.introspect import current_sklearn_config
+                current = current_sklearn_config(model, search.search_space)
+                if current:  # all None: nothing to start from
+                    search._set_initial([current])
         else:
-            return cls._from_pytorch_model(model, train_fn, backend, pretrained=pretrained, **kwargs)
+            search = cls._from_pytorch_model(model, train_fn, backend, pretrained=pretrained,
+                                             **kwargs)
+            if start_from_model and "initial_configs" not in kwargs:
+                search._set_initial([search._current_config])
+        return search
 
     @classmethod
     def _from_pytorch_model(cls, model, train_fn, backend, pretrained=None, **kwargs):
         from neuropt.introspect import (
             build_ml_context,
             build_search_space,
+            current_pytorch_config,
             introspect,
             make_wrapped_train_fn,
         )
@@ -133,13 +148,15 @@ class ArchSearch:
         print(f"  Search space: {list(search_space.keys())}")
         print()
 
-        return cls(
+        search = cls(
             train_fn=wrapped_fn,
             search_space=search_space,
             backend=backend,
             ml_context=ml_context,
             **kwargs,
         )
+        search._current_config = current_pytorch_config(info, search.search_space)
+        return search
 
     @classmethod
     def _from_sklearn_model(cls, model, train_fn, backend, **kwargs):
@@ -188,6 +205,8 @@ class ArchSearch:
         ml_context: str | None = None,
         minimize: bool = True,
         seed: int | None = None,
+        initial_configs: list | None = None,
+        max_curve_points: int | None = None,
     ):
         """
         Args:
@@ -216,6 +235,17 @@ class ArchSearch:
                 If False, higher scores are better (accuracy, AUROC).
             seed: Seed for the random configs this search draws (random
                 fallback, decision-model sampling). Default 42.
+            initial_configs: Configs to evaluate before asking the model, e.g.
+                your current settings. Values are checked against the search
+                space (snapped / clamped); keys may be left out to keep
+                whatever ``train_fn`` does by default. Configs already in the
+                log (on resume) are not run again.
+            max_curve_points: Show at most this many points per curve in the
+                prompt, evenly spaced and always including the first and last
+                (default: all). Long curves (500 boosting rounds) dominate the
+                prompt's size and cost; 20 cut a Claude Haiku 4.5 XGBoost run from
+                $0.61 to $0.07 in the benchmark harness, but whether it changes
+                search quality isn't settled (docs/evals.md), so it is off.
         """
         self.train_fn = train_fn
         self.search_space = _normalize_search_space(search_space)
@@ -226,8 +256,11 @@ class ArchSearch:
         self.ml_context = ml_context or DEFAULT_ML_CONTEXT
         self.minimize = minimize
         self.seed = 42 if seed is None else seed
+        self._max_curve_points = max_curve_points
 
+        self._set_initial(initial_configs or [])
         self._backend = self._resolve_backend_for(backend)
+        self._backend_requested = backend
         self._shutdown = False
         self._warned_no_timeout = False
 
@@ -238,6 +271,22 @@ class ArchSearch:
         self.total_experiments = 0
         self.llm_success = 0
         self.llm_fallback = 0
+        # Per-call counters for evaluation: how often the backend was called,
+        # failed to parse or errored, and how many proposed configs were duplicates.
+        self.stats = {"llm_calls": 0, "parse_failures": 0, "llm_errors": 0,
+                      "proposed_configs": 0, "invalid_configs": 0, "duplicate_configs": 0,
+                      "retries": 0}
+        # Evals by where their config came from: llm / decision / random / initial
+        self.sources = {}
+
+    def _set_initial(self, configs):
+        cleaned = []
+        for cfg in configs:
+            c = _validate_partial(cfg, self.search_space)
+            if c is None:
+                raise ValueError(f"initial config {cfg!r} has no valid search-space values")
+            cleaned.append(c)
+        self.initial_configs = cleaned
 
     @classmethod
     def _resolve_backend_for(cls, backend):
@@ -301,11 +350,16 @@ class ArchSearch:
             print(f"  Best so far: score={self.best_score:.4f} acc={self.best_accuracy:.4f}")
         if not max_evals:
             print("  Ctrl+C to stop")
+        if self._backend is None and self._backend_requested == "auto":
+            print("  NOTE: no model backend found (no API key or server configured), so this "
+                  "is plain random search. See the README for backends.")
         print("=" * 60)
         print()
         evals_at_start = self.total_experiments
 
         rng = random.Random(self.seed + self.total_experiments)
+        tried = {_config_key(row.get("config", {})) for row in history}
+        pending = [c for c in self.initial_configs if _config_key(c) not in tried]
 
         while not self._shutdown:
             if max_evals and (self.total_experiments - evals_at_start) >= max_evals:
@@ -313,7 +367,11 @@ class ArchSearch:
 
             iter_start = time.time()
 
-            configs, source = self._get_configs(history, rng)
+            if pending:
+                configs, source = pending[:self.batch_size], "initial"
+                pending = pending[self.batch_size:]
+            else:
+                configs, source = self._get_configs(history, rng)
 
             for idx, cfg in enumerate(configs):
                 if self._shutdown:
@@ -326,6 +384,8 @@ class ArchSearch:
                     run_cfg["device"] = self.device
 
                 result = self._run_one(run_cfg)
+                cfg_source = source[idx] if isinstance(source, list) else source
+                self.sources[cfg_source] = self.sources.get(cfg_source, 0) + 1
 
                 improved = ""
                 if self._is_better(result["score"]):
@@ -334,7 +394,7 @@ class ArchSearch:
                     self.best_accuracy = _get_accuracy(result)
                     improved = " *** NEW BEST ***"
 
-                logger.log(iteration, cfg, result, source)
+                logger.log(iteration, cfg, result, cfg_source)
                 history.append({
                     "id": self.total_experiments + 1,
                     "config": cfg,
@@ -351,7 +411,7 @@ class ArchSearch:
                 status_s = f" [{result['status']}]" if result["status"] != "ok" else ""
                 cfg_s = _short_config(cfg)
                 print(f"  [{iteration}.{idx}] {cfg_s} → {result['score']:.4f}"
-                      f"{extra} {result['elapsed']:.1f}s [{source}]{status_s}{improved}")
+                      f"{extra} {result['elapsed']:.1f}s [{cfg_source}]{status_s}{improved}")
 
             if self._shutdown:
                 break
@@ -371,55 +431,107 @@ class ArchSearch:
     MAX_RETRIES = 3
 
     def _get_configs(self, history, rng):
-        """Ask LLM for configs with retry loop for duplicates."""
+        """Ask the LLM for configs, re-asking when it repeats itself.
+
+        Returns ``(configs, sources)``: one source per config, ``"llm"`` for
+        configs the model proposed and ``"random"`` for random ones (a short or
+        partly invalid answer is topped up; duplicates left after the last retry
+        are replaced), so the log shows exactly which evals the model chose.
+        """
         if self._backend is None:
             return [_random_config(self.search_space, rng)
                     for _ in range(self.batch_size)], "random"
 
-        prompt = self._build_prompt(history)
+        system, prompt = self._build_state_parts(history)
+        prompt = prompt + "\n" + self._task_text()
 
         for attempt in range(self.MAX_RETRIES):
             try:
-                response = self._backend.generate(prompt, max_tokens=2048)
+                response = self._generate(system, prompt)
+                self.stats["llm_calls"] += 1
                 configs = self._parse_response(response)
-                if configs is not None:
-                    # Top up a short (but valid) answer with random configs
-                    while len(configs) < self.batch_size:
-                        configs.append(_random_config(self.search_space, rng))
 
                 if configs is None:
+                    self.stats["parse_failures"] += 1
                     self.llm_fallback += 1
                     # Show first 200 chars of response for debugging
                     snippet = response[:200].replace('\n', ' ') if response else "(empty)"
                     print(f"  [LLM parse failed, using random] response preview: {snippet}")
                     break
 
+                self.stats["proposed_configs"] += len(configs)
+                sources = ["llm"] * len(configs)
+                # Top up a short or partly invalid answer with random configs
+                while len(configs) < self.batch_size:
+                    configs.append(_random_config(self.search_space, rng))
+                    sources.append("random")
+
                 # Check for duplicates against history
                 dupes = self._find_duplicates(configs, history)
+                self.stats["duplicate_configs"] += len(dupes)
                 if not dupes:
                     self.llm_success += 1
-                    return configs, "llm"
+                    return configs, sources
 
                 # Tell the LLM what it repeated and ask for something new
                 if attempt < self.MAX_RETRIES - 1:
+                    self.stats["retries"] += 1
                     print(f"  [retry {attempt+1}: {len(dupes)} duplicate configs, asking LLM to adjust]")
                     prompt = self._build_retry_prompt(configs, dupes, history)
+                    system = None
                 else:
                     # Last attempt — keep non-duplicate configs, replace dupes with random
                     print(f"  [still {len(dupes)} duplicates after {self.MAX_RETRIES} tries, "
                           f"replacing with random]")
                     for i in dupes:
                         configs[i] = _random_config(self.search_space, rng)
+                        sources[i] = "random"
                     self.llm_success += 1
-                    return configs, "llm"
+                    return configs, sources
 
             except Exception as e:
+                self.stats["llm_errors"] += 1
                 self.llm_fallback += 1
                 print(f"  [LLM error: {e}, using random]")
                 break
 
         return [_random_config(self.search_space, rng)
                 for _ in range(self.batch_size)], "random"
+
+    def _generate(self, system, prompt):
+        """Call the backend, with the response schema when it supports one.
+
+        Backends that subclass ``BaseLLMBackend`` get ``generate_structured``;
+        any other object only needs ``generate(prompt, max_tokens)``.
+        """
+        if hasattr(self._backend, "generate_structured"):
+            return self._backend.generate_structured(
+                prompt, system=system, schema=self._response_schema(), max_tokens=4096)
+        full = prompt if system is None else system + "\n" + prompt
+        return self._backend.generate(full, max_tokens=4096)
+
+    def _response_schema(self):
+        """JSON schema for one answer: ``{"configs": [config, ...]}``.
+
+        Categorical choices become ``enum``s. Numeric ranges can't be expressed
+        (structured outputs don't support minimum/maximum), so they are stated
+        in the description and clamped by ``_validate_config``.
+        """
+        props = {}
+        for name, dim in self.search_space.items():
+            if isinstance(dim, Categorical):
+                props[name] = {"enum": list(dim.choices)}
+            elif isinstance(dim, IntUniform):
+                props[name] = {"type": "integer",
+                               "description": f"integer in [{dim.low}, {dim.high}]"}
+            else:
+                props[name] = {"type": "number",
+                               "description": f"number in [{dim.low}, {dim.high}]"}
+        config = {"type": "object", "properties": props,
+                  "required": list(props), "additionalProperties": False}
+        return {"type": "object",
+                "properties": {"configs": {"type": "array", "items": config}},
+                "required": ["configs"], "additionalProperties": False}
 
     def _find_duplicates(self, configs, history):
         """Return indices of configs that match history OR each other in the batch."""
@@ -569,17 +681,27 @@ class ArchSearch:
         Shared by the LLM prompt and the decision-model state, so both see the
         same evidence.
         """
-        parts = [self.ml_context.strip(), ""]
+        return "\n".join(self._build_state_parts(history))
 
-        # Search space
+    def _build_state_parts(self, history):
+        """The state split in two: a part that is the same on every call (context,
+        config space, score direction), which backends send as a cacheable system
+        prompt, and the part that changes (best result, history, curves)."""
+        return self._static_state(), self._dynamic_state(history)
+
+    def _static_state(self):
+        parts = [self.ml_context.strip(), ""]
         parts.append("## Config Space\n")
         parts.append("Each config is a JSON object with these keys:")
         for name, dim in self.search_space.items():
             parts.append(_describe_dim(name, dim))
         parts.append("")
-
         direction = "lower is better" if self.minimize else "higher is better"
         parts.append(f"Score direction: {direction}\n")
+        return "\n".join(parts)
+
+    def _dynamic_state(self, history):
+        parts = []
 
         # Best result
         if self.best_config is not None:
@@ -695,21 +817,23 @@ class ArchSearch:
     def _parse_response(self, response):
         """Parse LLM JSON into validated configs.
 
-        Returns up to ``batch_size`` configs (extras are dropped), or None if
-        there is no JSON array, it is empty, or any config is invalid.
+        Accepts a JSON array of configs or an object ``{"configs": [...]}``
+        (the structured-output shape). Invalid configs are dropped and counted
+        in ``stats["invalid_configs"]``; the valid ones are kept (at most
+        ``batch_size``). Returns None if nothing usable is found.
         """
         configs = extract_json(response, "[")
         if not configs:
             return None
-        configs = configs[:self.batch_size]
 
         validated = []
         for cfg in configs:
             cleaned = _validate_config(cfg, self.search_space)
             if cleaned is None:
-                return None
-            validated.append(cleaned)
-        return validated
+                self.stats["invalid_configs"] += 1
+            else:
+                validated.append(cleaned)
+        return validated[:self.batch_size] or None
 
     # ── Signal handling ────────────────────────────────────────────────────
 
@@ -759,6 +883,14 @@ class ArchSearch:
             print(f"  Best config: {json.dumps(self.best_config, default=str)}")
         if self._backend:
             print(f"  {self._decider_label}: {self.llm_success} ok, {self.llm_fallback} fallback")
+            proposed = sum(n for k, n in self.sources.items() if k != "initial")
+            rand = self.sources.get("random", 0)
+            if proposed:
+                print(f"  Configs this run: {proposed - rand} from the model, {rand} random "
+                      f"({100 * rand / proposed:.0f}% random)")
+                if rand / proposed > 0.1:
+                    print(f"  WARNING: {rand} of {proposed} configs were random because the "
+                          "model's answer failed or was unusable; see the [LLM ...] lines above.")
             tokens_in = self._backend.total_input_tokens
             tokens_out = self._backend.total_output_tokens
             if tokens_in or tokens_out:
@@ -1009,6 +1141,8 @@ def _validate_config(cfg, search_space):
                     val = bool(val)
             choice = _match_choice(val, dim.choices)
             if choice is _NO_MATCH:
+                choice = _nearest_choice(val, dim.choices)
+            if choice is _NO_MATCH:
                 return None
             cleaned[name] = choice
         elif isinstance(dim, IntUniform):
@@ -1033,6 +1167,20 @@ def _validate_config(cfg, search_space):
 _NO_MATCH = object()
 
 
+def _validate_partial(cfg, search_space):
+    """Like ``_validate_config`` for the keys ``cfg`` has; other keys are left
+    out. Returns None if no key is valid."""
+    if not isinstance(cfg, dict):
+        return None
+    cleaned = {}
+    for name, val in cfg.items():
+        if name in search_space:
+            one = _validate_config({name: val}, {name: search_space[name]})
+            if one is not None:
+                cleaned.update(one)
+    return cleaned or None
+
+
 def _match_choice(val, choices):
     """Return the element of ``choices`` that ``val`` refers to.
 
@@ -1053,6 +1201,23 @@ def _match_choice(val, choices):
         except Exception:
             continue
     return _NO_MATCH
+
+
+def _nearest_choice(val, choices):
+    """Snap a near miss to a choice: a string that differs only in case or
+    surrounding spaces, or a number between numeric choices (nearest on a log
+    scale when everything is positive, e.g. 96 -> 128 for [64, 128, 256]).
+    Returns ``_NO_MATCH`` otherwise."""
+    if isinstance(val, str):
+        hits = [c for c in choices if isinstance(c, str) and c.strip().lower() == val.strip().lower()]
+        return hits[0] if len(hits) == 1 else _NO_MATCH
+    numeric = [c for c in choices if isinstance(c, (int, float)) and not isinstance(c, bool)]
+    if (isinstance(val, bool) or not isinstance(val, (int, float)) or not math.isfinite(val)
+            or len(numeric) != len(choices) or not numeric):
+        return _NO_MATCH
+    if val > 0 and all(c > 0 for c in numeric):
+        return min(numeric, key=lambda c: abs(math.log(c / val)))
+    return min(numeric, key=lambda c: abs(c - val))
 
 
 def _fmt(v):

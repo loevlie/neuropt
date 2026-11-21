@@ -1046,7 +1046,7 @@ class TestResponseParsing:
         search = ArchSearch(lambda cfg: {"score": cfg["x"]}, {"x": (1.0, 10.0)},
                             backend=_CannedLLM(['[{"x": 2}]']), log_path=tmp_log)
         configs, source = search._get_configs([], _random.Random(0))
-        assert source == "llm"
+        assert source == ["llm", "random", "random"]  # top-ups are counted as random
         assert len(configs) == 3
         assert configs[0]["x"] == 2.0
 
@@ -1090,7 +1090,7 @@ class TestSklearnBackendResolvedOnce:
         import neuropt.backends as backends
         made = []
 
-        def factory():
+        def factory(model=None):
             made.append(_CannedLLM(['{"max_depth": {"type": "int", "min": 2, "max": 9}}']))
             return made[-1]
 
@@ -1142,25 +1142,76 @@ class TestFitSignal:
         assert _fit_signal([3.0, 1.0, 0.6], [3.1, 1.1, 0.7]) is None
 
 
-class TestAutoQwenNotice:
-    def test_notice_when_falling_back_to_qwen(self, monkeypatch, capsys):
+class TestBackendSelection:
+    class Avail(BaseLLMBackend):
+        def __init__(self, ok, tag):
+            super().__init__()
+            self.ok, self.tag = ok, tag
+
+        def generate(self, prompt, max_tokens=1024):
+            return ""
+
+        def is_available(self):
+            return self.ok
+
+    def _registry(self, monkeypatch, **available):
         import neuropt.backends as backends
+        made = []
 
-        class Avail(BaseLLMBackend):
-            def __init__(self, ok):
-                super().__init__()
-                self.ok = ok
-
-            def generate(self, prompt, max_tokens=1024):
-                return ""
-
-            def is_available(self):
-                return self.ok
+        def factory(name):
+            def make(model=None):
+                made.append((name, model))
+                return self.Avail(available.get(name, False), name)
+            return make
 
         monkeypatch.setattr(backends, "_REGISTRY", {
-            "claude": lambda: Avail(False),
-            "openai": lambda: Avail(False),
-            "qwen": lambda: Avail(True),
-        })
-        assert backends.get_default_backend() is not None
-        assert "Qwen2.5-1.5B" in capsys.readouterr().out
+            n: factory(n) for n in ("claude", "openai", "openai-compatible", "qwen")})
+        return backends, made
+
+    def test_qwen_is_never_auto_detected(self, monkeypatch):
+        backends, made = self._registry(monkeypatch, qwen=True)
+        monkeypatch.delenv("NEUROPT_MODEL", raising=False)
+        assert backends.get_default_backend() is None
+        assert "qwen" not in [n for n, _ in made]
+
+    def test_claude_model_selects_claude(self, monkeypatch):
+        backends, made = self._registry(monkeypatch, claude=True, openai=True)
+        monkeypatch.setenv("NEUROPT_MODEL", "claude-haiku-5-5")
+        assert backends.get_default_backend().tag == "claude"
+        assert made == [("claude", "claude-haiku-5-5")]
+
+    def test_compatible_server_wins_when_configured(self, monkeypatch):
+        backends, _ = self._registry(monkeypatch, claude=True, **{"openai-compatible": True})
+        monkeypatch.delenv("NEUROPT_MODEL", raising=False)
+        assert backends.get_default_backend().tag == "openai-compatible"
+
+    def test_openai_compatible_backend_reads_env(self, monkeypatch):
+        from neuropt.backends.openai_backend import OpenAIBackend
+        monkeypatch.setenv("NEUROPT_LLM_BASE_URL", "http://localhost:11434/v1")
+        monkeypatch.setenv("NEUROPT_MODEL", "qwen2.5:7b")
+        b = OpenAIBackend()
+        assert b.is_available() and b.total_cost is None
+        assert "qwen2.5:7b @ http://localhost:11434/v1" in b.name
+        plain = OpenAIBackend(base_url="")  # forced OpenAI ignores the env URL
+        assert plain.base_url is None
+
+    def test_openai_compatible_needs_a_model(self, monkeypatch):
+        from neuropt.backends.openai_backend import OpenAIBackend
+        monkeypatch.delenv("NEUROPT_MODEL", raising=False)
+        with pytest.raises(ValueError, match="model"):
+            OpenAIBackend(base_url="http://localhost:8000/v1")
+
+
+class TestSearchStats:
+    def test_counts_parse_failures_and_duplicates(self, tmp_log):
+        good = '[{"x": 2.0}, {"x": 2.0}]'  # second config duplicates the first
+        search = ArchSearch(lambda cfg: {"score": cfg["x"]}, {"x": (1.0, 10.0)},
+                            backend=_CannedLLM([good, good, good, "no json here"]),
+                            log_path=tmp_log, batch_size=2)
+        search.run(max_evals=4)
+        assert search.stats["llm_calls"] == 4
+        assert search.stats["parse_failures"] == 1
+        assert search.stats["retries"] == 2
+        assert search.stats["duplicate_configs"] == 3
+        assert search.stats["proposed_configs"] == 6
+        assert search.stats["llm_errors"] == 0

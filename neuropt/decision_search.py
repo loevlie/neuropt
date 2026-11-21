@@ -87,12 +87,12 @@ class DecisionSearch(ArchSearch):
             raise ValueError("n_candidates must be at least 1")
         if not 0.0 <= explore <= 1.0:
             raise ValueError("explore must be between 0 and 1")
-        super().__init__(train_fn, search_space, backend=backend, **kwargs)
+        super().__init__(train_fn, search_space, backend=backend,
+                         max_curve_points=max_curve_points, **kwargs)
         self.n_bins = n_bins
         self.n_candidates = n_candidates
         self.explore = explore
         self.rerank = rerank
-        self._max_curve_points = max_curve_points
 
     @classmethod
     def _resolve_backend_for(cls, backend):

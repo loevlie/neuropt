@@ -9,6 +9,8 @@ neuropt run train.py
 neuropt run train.py --backend claude
 neuropt run train.py --backend none -n 50 --log results.jsonl
 neuropt run train.py --backend decision --decision-url http://gpu-box:8741
+neuropt run train.py --model claude-haiku-5-5
+neuropt run train.py --base-url http://localhost:11434/v1 --model qwen3.5:9b   # local model via Ollama
 ```
 
 Your script must define:
@@ -21,7 +23,9 @@ and `minimize = False` if higher scores are better.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--backend` | auto | `auto`, `claude`, `openai`, `qwen`, `none`, `decision` ([decision model](decision-models.md)) |
+| `--backend` | auto | `auto`, `claude`, `openai`, `openai-compatible`, `none`, `decision` ([decision model](decision-models.md)); `qwen` is deprecated |
+| `-m` / `--model` | `$NEUROPT_MODEL`, else the backend's default | Model id, e.g. `claude-haiku-5-5`, `gpt-4o-mini`, `qwen3.5:9b`. A `claude-*` model selects the Claude backend |
+| `--base-url` | `$NEUROPT_LLM_BASE_URL` | OpenAI-compatible server (Ollama, vLLM, llama.cpp, LM Studio, OpenRouter); needs `--model` |
 | `--decision-url` | `$NEUROPT_DECISION_URL` or `http://127.0.0.1:8741` | Decision server root (implies `--backend decision`) |
 | `--log` | search.jsonl | Log file path (supports resume) |
 | `-b` / `--batch-size` | 3 | Configs proposed per LLM call |

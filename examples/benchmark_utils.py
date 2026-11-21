@@ -1,4 +1,8 @@
-"""Shared helpers for the benchmark example scripts.
+"""LEGACY: single-seed demo script, superseded by the multi-seed harness in benchmarks/
+(python -m benchmarks.run). It scores on the split the optimizer sees and has no held-out
+test set, so its numbers are not comparable with the README or docs/evals.md.
+
+Shared helpers for the benchmark example scripts.
 
 Each benchmark script defines its own data setup, ``evaluate(cfg)`` function
 returning ``(loss, accuracy, elapsed, ...)``, and a neuropt-style search space
@@ -72,13 +76,19 @@ def run_neuropt(train_fn, space, backend_name, n_evals, log_path, search_cls=Non
                      llm_fallback=search.llm_fallback)
 
 
-def run_decision(train_fn, space, n_evals, log_path, url=None, **kwargs):
-    """Run DecisionSearch against a /v1/systemone decision server."""
+def run_decision(train_fn, space, n_evals, log_path, url=None, model=None, **kwargs):
+    """Run DecisionSearch against a /v1/systemone decision server.
+
+    ``model`` is the model id sent with each request (e.g. ``jev-latest`` for
+    hosted Jev at https://api.typesafe.ai); the API key, if the server needs
+    one, is read from ``$NEUROPT_DECISION_API_KEY``.
+    """
     from neuropt import DecisionSearch
     from neuropt.backends import DecisionBackend
 
     # Generous timeout: a local server on a busy GPU can take minutes per round.
-    backend = DecisionBackend(base_url=url, timeout=1800)
+    backend_kwargs = {"model": model} if model else {}
+    backend = DecisionBackend(base_url=url, timeout=1800, **backend_kwargs)
     return run_neuropt(train_fn, space, backend, n_evals, log_path,
                        search_cls=DecisionSearch, **kwargs)
 

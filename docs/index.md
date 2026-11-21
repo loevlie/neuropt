@@ -90,4 +90,4 @@ Everything is logged to JSONL. Kill it, restart it, it picks up where it left of
 
 ## Works with
 
-PyTorch models, XGBoost, LightGBM, Random Forest, any sklearn estimator. Supports Claude, OpenAI, and local Qwen backends.
+PyTorch models, XGBoost, LightGBM, Random Forest, any sklearn estimator. Supports Claude, OpenAI, and any OpenAI-compatible server (Ollama, vLLM) for local models.

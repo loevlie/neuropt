@@ -52,8 +52,17 @@ def _load_script(script_path: Path):
 def run(
     script: Path = typer.Argument(..., help="Training script (must define train_fn + search_space or model)"),
     backend: str = typer.Option(
-        "auto", help="Backend: auto, claude, openai, qwen, none, or decision "
-                     "(experimental: a Jev-style decision model such as H2O-Lightning-4B)"),
+        "auto", help="Backend: auto, claude, openai, openai-compatible, none, decision "
+                     "(experimental: a Jev-style decision model), or qwen (deprecated)"),
+    model: Optional[str] = typer.Option(
+        None, "--model", "-m",
+        help="Model id, e.g. claude-haiku-5-5 or gpt-4o-mini (default: $NEUROPT_MODEL, "
+             "else the backend's default). A claude-* model selects the Claude backend."),
+    base_url: Optional[str] = typer.Option(
+        None, "--base-url",
+        help="OpenAI-compatible server for a local or hosted model, e.g. "
+             "http://localhost:11434/v1 for Ollama (default: $NEUROPT_LLM_BASE_URL). "
+             "Needs --model."),
     log: str = typer.Option("search.jsonl", help="Log file path (JSONL, supports resume)"),
     batch_size: int = typer.Option(3, "--batch-size", "-b", help="Configs per LLM call"),
     device: Optional[str] = typer.Option(None, help="Device (cuda, mps, cpu). Auto-detects if omitted."),
@@ -86,6 +95,18 @@ def run(
                    err=True)
         raise typer.Exit(1)
     use_decision = backend == "decision" or decision_url is not None
+
+    # The backends read these, so --model/--base-url work for every backend name
+    import os
+    if model:
+        os.environ["NEUROPT_MODEL"] = model
+    if base_url:
+        if backend not in ("auto", "openai", "openai-compatible"):
+            typer.echo(f"Error: --base-url is for OpenAI-compatible servers (got --backend {backend})",
+                       err=True)
+            raise typer.Exit(1)
+        os.environ["NEUROPT_LLM_BASE_URL"] = base_url
+        backend = "openai-compatible"
 
     train_fn, search_space, model, ml_context, script_minimize = _load_script(script)
 

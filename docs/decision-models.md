@@ -120,14 +120,23 @@ If the server errors, that iteration falls back to random configs and the search
 
 ## Results so far
 
-Preliminary, one seed per task, with the README's benchmark scripts. The decision model (H2O-Lightning-4B, Q8_0 on llama.cpp) was run on an Apple M5 Pro. The other CNN numbers are from the original README run.
+Hosted Jev (`jev-latest`) in the evaluation harness: 5 seeds, 30 evals, test loss of the
+best-validation config (see [Evaluations](evals.md)).
 
-| 15 evals | Decision model | Claude Haiku 4.5 | Optuna TPE | Random |
+| Search from scratch | Jev | Claude Haiku 5.5 | Optuna TPE | Random |
 |---|:---:|:---:|:---:|:---:|
-| CNN, 14 params | **0.363** | 0.385 | 0.454 | 0.610 |
-| XGBoost Covertype, 9 params | 0.593 | ~0.414 | **0.415** | 0.418 |
+| CNN, 14 params | 0.437 ± 0.053 | 0.367 ± 0.017 | 0.477 ± 0.082 | 0.524 ± 0.075 |
+| XGBoost Covertype, 9 params | 0.399 ± 0.012 | 0.392 ± 0.004 | 0.396 ± 0.007 | 0.404 ± 0.010 |
+| Tabular MLP, 9 params | 0.560 ± 0.004 | 0.560 ± 0.002 | 0.557 ± 0.003 | 0.561 ± 0.002 |
 
-On XGBoost it never left low learning rates (at most 0.008), so every model was undertrained. The per-parameter questions currently favour the current best's range too strongly. Improving that is the next step.
+Jev beats TPE on the CNN task on 4 of 5 seeds, at under $0.01 per run and 0.3 s per call, but is
+behind Claude Haiku 5.5 (neuropt's default LLM, similar cost) on the CNN and on XGBoost, 4 of 5
+seeds each. On the MLP there is no measurable difference between Jev and Haiku 5.5. With a default
+config evaluated first, Jev beats default-seeded TPE on XGBoost (4 of 5 seeds) and is worse on the
+CNN and the MLP (4 of 5 seeds each).
+
+The open-weight H2O-Lightning-4B has only been run on one seed with the older benchmark scripts
+(0.363 on the CNN, 0.593 on XGBoost); it has not been through the harness yet.
 
 ## Limitations
 

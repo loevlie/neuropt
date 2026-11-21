@@ -27,22 +27,43 @@ Point it at a training script, let it run overnight. The LLM sees full per-epoch
 ### vs Optuna and random search
 
 <p align="center">
-  <img src="assets/benchmark.png" alt="Benchmark: neuropt vs Optuna vs Random" width="700">
+  <img src="assets/harness_test.png" alt="Test loss against evaluations used on three tasks, for random search, Optuna TPE, Jev and neuropt with Claude Haiku 5.5, GPT-4o mini and a local Qwen3.5 9B; top row searching from scratch, bottom row with a default config evaluated first" width="900">
 </p>
 
-Same 15-eval budget on two tasks: CNN architecture search (14 params) and XGBoost tuning (9 params, 7-class Covertype). These results use **Claude Haiku 4.5** (the smallest and cheapest of their 4.5 models). We expect even stronger results with Sonnet or Opus. Optuna's TPE was configured with `n_startup_trials=3` for a fair comparison (default is 10, which would make it purely random for most of the budget).
+Three tasks, 30 evals per run, 5 seeds per method. Each task has a held-out test split that no optimizer or prompt ever sees; the number reported is the **test** loss of the config with the best validation loss. Mean ± std over seeds, lower is better.
 
-In a separate 200-eval run on the CNN task, neuropt again beat the others within 15 evals and kept improving — reaching 0.337 val loss by eval 200 (vs 0.454 for Optuna's best at 15). Local Qwen backend (experimental) also beat Optuna at 15 evals (0.440 vs 0.454) despite a 40% JSON parse failure rate.
+| Search from scratch, after 30 evals | CNN (14 params) | XGBoost (9 params) | Tabular MLP (9 params) | LLM cost per run |
+|---|:---:|:---:|:---:|:---:|
+| Random search | 0.524 ± 0.075 | 0.404 ± 0.010 | 0.561 ± 0.002 | none |
+| Optuna TPE | 0.477 ± 0.082 | 0.396 ± 0.007 | 0.557 ± 0.003 | none |
+| neuropt, Claude Haiku 5.5 (default) | 0.367 ± 0.017 | 0.392 ± 0.004 | 0.560 ± 0.002 | $0.008 to $0.07 |
+| neuropt, GPT-4o mini | 0.452 ± 0.042 | 0.392 ± 0.003 | 0.567 ± 0.005 | under $0.01 |
+| neuropt, Qwen3.5 9B (local, Ollama) | 0.395 ± 0.045 | | | none |
+| neuropt, Jev decision model | 0.437 ± 0.053 | 0.399 ± 0.012 | 0.560 ± 0.004 | under $0.01 |
 
-<p align="center">
-  <img src="assets/search_combined_15.png" alt="2-param search: neuropt vs Optuna vs Random" width="700">
-</p>
+| Default config evaluated first, after 30 evals | CNN | XGBoost | Tabular MLP |
+|---|:---:|:---:|:---:|
+| Random search | 0.432 ± 0.006 | 0.403 ± 0.009 | 0.560 ± 0.004 |
+| Optuna TPE | 0.361 ± 0.028 | 0.400 ± 0.003 | 0.556 ± 0.003 |
+| neuropt, Claude Haiku 5.5 (default) | 0.369 ± 0.011 | 0.388 ± 0.003 | 0.560 ± 0.002 |
+| neuropt, GPT-4o mini | 0.416 ± 0.031 | 0.399 ± 0.007 | 0.564 ± 0.006 |
+| neuropt, Qwen3.5 9B (local, Ollama) | 0.354 ± 0.006 | | |
+| neuropt, Jev decision model | 0.371 ± 0.010 | 0.393 ± 0.010 | 0.562 ± 0.004 |
+
+What this shows, using a rule fixed before the runs (better on average and on at least 4 of 5 seeds):
+
+- **Where neuropt helps.** With the default model, Claude Haiku 5.5, neuropt beats Optuna TPE on the CNN from scratch (4 of 5 seeds; 0.585 against 0.709 after 5 evals) and on XGBoost, from scratch (4 of 5) and with the default config first (5 of 5, 0.388 against 0.400).
+- **Where it doesn't.** On the tabular MLP, TPE is better than every neuropt variant, by a small margin (0.003 in log loss for Haiku 5.5). If you already have a sensible default for the CNN, TPE seeded with it does as well as neuropt.
+- **Models differ.** GPT-4o mini, the OpenAI default, is the weakest model here. A local Qwen3.5 9B through Ollama beats TPE on the CNN from scratch at no API cost, at about 20 s per call. Jev is behind Claude Haiku 5.5 on the CNN and XGBoost.
+- **Reliability and cost.** Answers are constrained to a JSON schema built from your search space, and no model returned an unusable config in 140 runs (the previous version fell back to random configs for 18% of evals on the MLP). A 30-eval run with Claude Haiku 5.5 costs about $0.008, or $0.07 with XGBoost's 500-round curves (`max_curve_points=20` brings that to $0.009).
+
+Haiku 5.5's XGBoost row is the package default (full curves); its CNN and MLP numbers come from the run with at most 20 curve points, which is the same prompt there because those curves are shorter. The local model ran on the CNN task only. Previous results (neuropt 0.6.1 with Claude Haiku 4.5), the full protocol, per-run statistics and the negative results are in [docs/evals.md](docs/evals.md). To reproduce: `python -m benchmarks.run && python -m benchmarks.plot`.
 
 ## Quick start
 
 ```bash
 pip install "neuropt[llm]"
-export ANTHROPIC_API_KEY="sk-ant-..."
+export ANTHROPIC_API_KEY="sk-ant-..."   # or OPENAI_API_KEY, or a local model: --base-url / --model
 ```
 
 **Option 1** — define what to search over:
@@ -91,22 +112,19 @@ search.run(max_evals=50)
 ### Or let a decision model choose (experimental)
 
 > [!NOTE]
-> **Still evaluating.** `DecisionSearch` works end to end, but it's new and the results below are preliminary: one seed per task. Its defaults may change as we benchmark it further.
+> **Still evaluating.** `DecisionSearch` works end to end, but it's new and its defaults may change as we benchmark it further.
 
-`DecisionSearch` uses a [Jev](https://openrouter.ai/docs/guides/community/jev.md)-style **decision model** instead of a generative LLM. A decision model answers multiple-choice questions with calibrated probabilities instead of writing text. neuropt asks it one question per hyperparameter ("which `lr` range is most likely to beat the current best?"), samples candidates from its answers, then asks it to pick among them. The default is the open-weight [H2O-Lightning-4B](https://huggingface.co/h2oai/h2o-lightning-4b), which runs locally through llama.cpp (Apple Silicon included). Any server with the same `/v1/systemone` API also works.
+`DecisionSearch` uses a [Jev](https://docs.typesafe.ai/concepts/system-one)-style **decision model** instead of a generative LLM. A decision model answers multiple-choice questions with calibrated probabilities instead of writing text. neuropt asks it one question per hyperparameter ("which `lr` range is most likely to beat the current best?"), samples candidates from its answers, then asks it to pick among them. The default is the open-weight [H2O-Lightning-4B](https://huggingface.co/h2oai/h2o-lightning-4b), which runs locally through llama.cpp (Apple Silicon included). Any server with the same `/v1/systemone` API also works, including hosted Jev.
 
-<p align="center">
-  <img src="assets/benchmark_decision_cnn.png" alt="CNN benchmark: H2O-Lightning-4B decision model vs Claude Haiku 4.5, Optuna and random search" width="680">
-</p>
+Benchmarked with hosted Jev (`jev-latest`) in the same harness as above (5 seeds, 30 evals, test loss):
 
-| CNN search · 14 params · 15 evals | Best val loss | Best accuracy | Best after 5 evals |
-|---|:---:|:---:|:---:|
-| **neuropt · H2O-Lightning-4B decision model** | **0.363** | **86.9%** | **0.388** |
-| neuropt · Claude Haiku 4.5 | 0.385 | 85.4% | 0.401 |
-| Optuna TPE | 0.454 | 82.7% | 0.612 |
-| Random search | 0.610 | 76.7% | 0.655 |
+| Search from scratch | CNN | XGBoost | Tabular MLP | Cost per run | Time per model call |
+|---|:---:|:---:|:---:|:---:|:---:|
+| neuropt, Jev decision model | 0.437 ± 0.053 | 0.399 ± 0.012 | 0.560 ± 0.004 | under $0.01 | 0.3 s |
+| neuropt, Claude Haiku 5.5 | 0.367 ± 0.017 | 0.392 ± 0.004 | 0.560 ± 0.002 | $0.008 to $0.07 | 4.0 to 4.6 s |
+| Optuna TPE | 0.477 ± 0.082 | 0.396 ± 0.007 | 0.557 ± 0.003 | none | none |
 
-On the CNN task its first picks were textbook (residual connections, AdamW, batch norm, max pooling), and it was ahead from the second evaluation. On the 9-parameter XGBoost task it currently trails (0.593 vs 0.415 for Optuna) because it stayed with learning rates that were too low. That's the next thing we're working on.
+Jev beats Optuna TPE on the CNN task (4 of 5 seeds) and answers more than ten times faster than an LLM, but Claude Haiku 5.5 is better than Jev on the CNN and on XGBoost (4 of 5 seeds each), at a similar cost. With a default config evaluated first, Jev does not beat default-seeded TPE on the CNN or the MLP.
 
 ```python
 from neuropt import DecisionSearch
@@ -119,7 +137,7 @@ search.run(max_evals=50)
 neuropt run train.py --decision-url http://gpu-box:8741
 ```
 
-See [Decision Models](https://loevlie.github.io/neuropt/decision-models/) for server setup and how it decides. To reproduce the benchmark: `python examples/benchmark.py --skip-claude --skip-qwen --decision-url http://127.0.0.1:8741`.
+See [Decision Models](https://loevlie.github.io/neuropt/decision-models/) for server setup and how it decides.
 
 ## Documentation
 
@@ -139,7 +157,7 @@ See the [full documentation](https://loevlie.github.io/neuropt/) for:
 ```bash
 pip install neuropt                  # core
 pip install "neuropt[llm]"           # + Claude API (recommended)
-pip install "neuropt[llm-openai]"    # + OpenAI API
+pip install "neuropt[llm-openai]"    # + OpenAI API, or a local model through Ollama / vLLM
 pip install "neuropt[all]"           # everything
 ```
 

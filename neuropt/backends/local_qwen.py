@@ -1,4 +1,8 @@
-"""Local Qwen2.5-1.5B-Instruct backend running on CPU (experimental)."""
+"""Local Qwen2.5-1.5B-Instruct backend running on CPU (deprecated).
+
+Use the openai-compatible backend with a local server (Ollama, vLLM) instead:
+it is faster, runs any model, and supports structured outputs.
+"""
 
 from neuropt.backends.base import BaseLLMBackend
 
@@ -25,9 +29,13 @@ class QwenBackend(BaseLLMBackend):
         print(f"[QwenBackend] Loading {self.MODEL_ID} on CPU...")
         self._tokenizer = AutoTokenizer.from_pretrained(
             self.MODEL_ID, trust_remote_code=True)
-        self._model = AutoModelForCausalLM.from_pretrained(
-            self.MODEL_ID, dtype=torch.float32,
-            device_map="cpu", trust_remote_code=True)
+        kwargs = dict(device_map="cpu", trust_remote_code=True)
+        try:  # transformers >= 4.56 calls it dtype; older versions torch_dtype
+            self._model = AutoModelForCausalLM.from_pretrained(
+                self.MODEL_ID, dtype=torch.float32, **kwargs)
+        except TypeError:
+            self._model = AutoModelForCausalLM.from_pretrained(
+                self.MODEL_ID, torch_dtype=torch.float32, **kwargs)
         self._model.eval()
         print("[QwenBackend] Model loaded.")
 

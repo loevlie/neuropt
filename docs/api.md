@@ -52,7 +52,7 @@ search = ArchSearch.from_model(model, train_fn, pretrained=True)
 |-----------|---------|-------------|
 | `train_fn` | required | `config dict → result dict` |
 | `search_space` | required | Dict of param names to ranges/choices |
-| `backend` | `"auto"` | `"auto"`, `"claude"`, `"openai"`, `"qwen"`, `"none"`, or a backend instance |
+| `backend` | `"auto"` | `"auto"`, `"claude"`, `"openai"`, `"openai-compatible"`, `"none"`, or a backend instance (`"qwen"` is deprecated) |
 | `log_path` | `"search.jsonl"` | JSONL log file |
 | `batch_size` | `3` | Configs per LLM call |
 | `device` | `None` | Injected as `config["device"]` |
@@ -60,6 +60,36 @@ search = ArchSearch.from_model(model, train_fn, pretrained=True)
 | `ml_context` | generic | Domain knowledge for the LLM |
 | `minimize` | `True` | If `True`, lower scores are better (loss). Set `False` for accuracy/AUROC |
 | `seed` | `42` | Seed for the random configs the search draws (random fallback, decision-model sampling) |
+| `max_curve_points` | `None` | Show at most this many points per curve in the prompt (default all). `20` cut XGBoost runs' cost 8x with no measured loss in quality |
+| `initial_configs` | `None` | Configs to evaluate before asking the model, e.g. your current settings. Snapped/clamped into the space; keys may be left out; not re-run on resume |
+
+`from_model(..., start_from_model=True)` evaluates the model's own settings first: an estimator's
+`get_params()` (params left at `None` keep the library default), or for a PyTorch model the model as
+it is, trained with AdamW, lr 1e-3, weight decay 1e-4. Pass `start_from_model=False` to skip it. In the
+benchmark harness, starting from a sensible config helped every neuropt arm on the CNN task and never
+made one worse ([evaluations](evals.md)).
+
+### Backends and models
+
+| Backend | Selected when | Model |
+|---|---|---|
+| `openai-compatible` | `$NEUROPT_LLM_BASE_URL` is set (auto) | `$NEUROPT_MODEL` (required) |
+| `claude` | `$ANTHROPIC_API_KEY` is set (auto), or `$NEUROPT_MODEL` starts with `claude` | `$NEUROPT_MODEL`, else Claude Haiku 5.5 |
+| `openai` | `$OPENAI_API_KEY` is set (auto) | `$NEUROPT_MODEL`, else GPT-4o mini |
+
+Pass a model directly with a backend instance:
+
+```python
+from neuropt.backends.claude_backend import ClaudeBackend
+from neuropt.backends.openai_backend import OpenAIBackend
+
+ArchSearch(train_fn, space, backend=ClaudeBackend(model="claude-haiku-5-5"))
+ArchSearch(train_fn, space, backend=OpenAIBackend(model="qwen3.5:9b", base_url="http://localhost:11434/v1"))
+```
+
+The model's answer is constrained to a JSON schema built from the search space (structured outputs),
+and the part of the prompt that never changes is sent as a cached system prompt. Servers that don't
+support a schema get plain JSON instructions. A custom backend only needs `generate(prompt, max_tokens)`.
 
 ### `run(max_evals=None)`
 
@@ -75,6 +105,8 @@ After `run()` completes:
 - `search.total_experiments` — total experiments run
 - `search.llm_success` — LLM calls that produced valid configs
 - `search.llm_fallback` — LLM calls that fell back to random
+- `search.sources` — evals by where their config came from (`llm`, `random`, `initial`); the summary warns when more than 10% of the model's configs were random
+- `search.stats` — LLM calls, parse failures, errors, invalid and duplicate proposals
 
 ## DecisionSearch
 
