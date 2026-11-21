@@ -60,6 +60,7 @@ search = ArchSearch.from_model(model, train_fn, pretrained=True)
 | `ml_context` | generic | Domain knowledge for the LLM |
 | `minimize` | `True` | If `True`, lower scores are better (loss). Set `False` for accuracy/AUROC |
 | `seed` | `42` | Seed for the random configs the search draws (random fallback, decision-model sampling) |
+| `max_curve_points` | `None` | Show at most this many points per curve in the prompt (default all). `20` cut XGBoost runs' cost 8x with no measured loss in quality |
 | `initial_configs` | `None` | Configs to evaluate before asking the model, e.g. your current settings. Snapped/clamped into the space; keys may be left out; not re-run on resume |
 
 `from_model(..., start_from_model=True)` evaluates the model's own settings first: an estimator's
@@ -73,7 +74,7 @@ made one worse ([evaluations](evals.md)).
 | Backend | Selected when | Model |
 |---|---|---|
 | `openai-compatible` | `$NEUROPT_LLM_BASE_URL` is set (auto) | `$NEUROPT_MODEL` (required) |
-| `claude` | `$ANTHROPIC_API_KEY` is set (auto), or `$NEUROPT_MODEL` starts with `claude` | `$NEUROPT_MODEL`, else Claude Haiku 4.5 |
+| `claude` | `$ANTHROPIC_API_KEY` is set (auto), or `$NEUROPT_MODEL` starts with `claude` | `$NEUROPT_MODEL`, else Claude Haiku 5.5 |
 | `openai` | `$OPENAI_API_KEY` is set (auto) | `$NEUROPT_MODEL`, else GPT-4o mini |
 
 Pass a model directly with a backend instance:

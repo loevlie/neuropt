@@ -662,7 +662,7 @@ def build_sklearn_search_space_with_llm(info, backend):
         "Respond with ONLY the JSON object. No explanation."
     )
 
-    response = backend.generate(prompt, max_tokens=1024)
+    response = backend.generate(prompt, max_tokens=4096)  # room for models that think first
 
     ranges = extract_json(response, "{")
     if ranges is None:

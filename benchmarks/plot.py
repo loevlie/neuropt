@@ -190,8 +190,8 @@ def write_tables(runs, path):
 
 # Methods in each figure (base names; "+default" variants go in the second row)
 FIGURE_PHASE1 = ["random", "tpe", "neuropt-haiku-4.5", "neuropt-gpt-4o-mini", "jev"]
-FIGURE_CURRENT = ["random", "tpe", "neuropt-v2-haiku-5.5", "neuropt-v2-haiku-4.5",
-                  "neuropt-v2-gpt-4o-mini", "jev", "hybrid-v2-haiku-5.5"]
+FIGURE_CURRENT = ["random", "tpe", "neuropt-v2-haiku-5.5", "neuropt-v2-gpt-4o-mini", "jev",
+                  "neuropt-v2-qwen3.5-9b"]
 
 
 def plot(runs, out_dir, methods=None, suffix=""):
@@ -326,6 +326,8 @@ def plot_extra(runs, out_dir):
                 if not rs:
                     continue
                 cost = np.mean([(r["summary"]["llm"] or {}).get("cost_usd") or 0 for r in rs])
+                if cost <= 0:
+                    continue  # local model: no API cost, can't sit on a log axis
                 vals = [r["test"][-1] for r in rs]
                 color = STYLE[base][1]
                 ax.errorbar(cost, np.mean(vals), yerr=np.std(vals, ddof=1), color=color, lw=1.2,
@@ -333,14 +335,20 @@ def plot_extra(runs, out_dir):
                             mew=1.6, capsize=3,
                             label=STYLE[base][0] + (", default first" if suffix else ""))
         ax.set_xscale("log")
-        ax.set_xlim(2e-3, 2)
+        ax.set_xlim(1e-3, 2)
         ax.grid(axis="y", color=grid, lw=0.8)
         ax.set_xlabel("LLM cost per 30-eval run (USD, log scale)", color=muted)
         style(ax, TASKS[task_name].title)
     axes[0][0].set_ylabel("Test loss after 30 evals\n(mean ± std over seeds, lower is better)", color=muted)
-    handles, labels = axes[0][0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=4, frameon=False, fontsize=9)
-    fig.tight_layout(rect=(0, 0.12, 1, 1))
+    entries = {}
+    for ax in axes.flat:
+        for handle, label in zip(*ax.get_legend_handles_labels()):
+            entries.setdefault(label, handle)
+    w, h = fig.get_size_inches()
+    fig.set_size_inches(w, h + 1.6)
+    fig.legend(entries.values(), entries.keys(), loc="lower center", ncol=4, frameon=False,
+               fontsize=9)
+    fig.tight_layout(rect=(0, 0.3, 1, 1))
     fig.savefig(os.path.join(out_dir, "harness_cost.png"), dpi=160)
     plt.close(fig)
 
@@ -357,6 +365,8 @@ def plot_extra(runs, out_dir):
         x = np.arange(len(tasks)) + (i - (len(llm) - 1) / 2) * width
         bars = ax.bar(x, shares, width * 0.9, color=STYLE[base][1], label=STYLE[base][0])
         for rect, share in zip(bars, shares):
+            if share == 0:
+                continue
             ax.text(rect.get_x() + rect.get_width() / 2, share + 0.4, f"{share:.0f}%", ha="center",
                     va="bottom", fontsize=9, color=ink)
     ax.set_xticks(range(len(tasks)))
@@ -365,7 +375,8 @@ def plot_extra(runs, out_dir):
     ax.grid(axis="y", color=grid, lw=0.8)
     ax.set_axisbelow(True)
     ax.legend(frameon=False, fontsize=9)
-    style(ax, "How often the model's answer was unusable (10 runs x 30 evals per bar)")
+    style(ax, "How often the model's answer was unusable (10 runs x 30 evals per bar;\n"
+              "bars not drawn are 0%)")
     fig.tight_layout()
     fig.savefig(os.path.join(out_dir, "harness_fallback.png"), dpi=160)
     plt.close(fig)

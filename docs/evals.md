@@ -93,7 +93,7 @@ Problems with that benchmark, which the protocol above fixes:
 latency and cost, are in [`benchmarks/results.md`](https://github.com/loevlie/neuropt/blob/main/benchmarks/results.md);
 the raw runs are in `benchmarks/runs/`.
 
-![Harness results](assets/harness_test.png)
+![Phase 1 results](assets/harness_test_phase1.png)
 
 | Search from scratch | CNN | XGBoost | Tabular MLP |
 |---|:---:|:---:|:---:|
@@ -182,6 +182,95 @@ Decisions, by the Phase 1 rule (mean lower and better on at least 4 of 5 paired 
    arms, `+default` against the same arm from scratch helps in 6 of 9 arm-task pairs and is never worse
    (no measurable difference in the other 3), so it is on by default for neuropt. (For Optuna TPE it
    helps on the CNN but is worse on XGBoost, 1 / 4 seeds.)
+
+## Phase 2 results (21 Nov 2026)
+
+Same tasks, seeds, budget and decision rule as Phase 1. Classical arms and Jev are the Phase 1 runs.
+`v2` = this branch's ArchSearch with at most 20 points per curve (see the plan above); "full curves" =
+the package default after Phase 2 (no cap), run on XGBoost only because the CNN and MLP curves (5 and
+10 epochs) are under 20 points, so their prompts are the same either way. The local model ran on the
+CNN task only (RTX 4090, Ollama): the MLP trains on the Mac's GPU for every other arm, and training on
+CUDA instead would change the numbers.
+
+![Phase 2 results](assets/harness_test.png)
+
+| Search from scratch | CNN | XGBoost | Tabular MLP |
+|---|:---:|:---:|:---:|
+| Random search | 0.524 ± 0.075 | 0.404 ± 0.010 | 0.561 ± 0.002 |
+| Optuna TPE | 0.477 ± 0.082 | 0.396 ± 0.007 | 0.557 ± 0.003 |
+| Jev | 0.437 ± 0.053 | 0.399 ± 0.012 | 0.560 ± 0.004 |
+| Claude Haiku 4.5 (0.6.1) | 0.372 ± 0.004 | 0.398 ± 0.015 | 0.558 ± 0.004 |
+| Claude Haiku 4.5, v2 | 0.369 ± 0.029 | 0.391 ± 0.008 | 0.560 ± 0.004 |
+| Claude Haiku 5.5, v2 | 0.367 ± 0.017 | 0.389 ± 0.006 | 0.560 ± 0.002 |
+| Claude Haiku 5.5, full curves | | 0.392 ± 0.004 | |
+| GPT-4o mini, v2 | 0.452 ± 0.042 | 0.392 ± 0.003 | 0.567 ± 0.005 |
+| Qwen3.5 9B (local), v2 | 0.395 ± 0.045 | | |
+| Haiku 5.5 for 9 evals, then TPE | 0.370 ± 0.024 | 0.394 ± 0.007 | 0.558 ± 0.002 |
+
+| Default config first | CNN | XGBoost | Tabular MLP |
+|---|:---:|:---:|:---:|
+| Random search | 0.432 ± 0.006 | 0.403 ± 0.009 | 0.560 ± 0.004 |
+| Optuna TPE | 0.361 ± 0.028 | 0.400 ± 0.003 | 0.556 ± 0.003 |
+| Jev | 0.371 ± 0.010 | 0.393 ± 0.010 | 0.562 ± 0.004 |
+| Claude Haiku 4.5 (0.6.1) | 0.363 ± 0.014 | 0.387 ± 0.004 | 0.560 ± 0.004 |
+| Claude Haiku 4.5, v2 | 0.358 ± 0.015 | 0.391 ± 0.011 | 0.568 ± 0.007 |
+| Claude Haiku 5.5, v2 | 0.369 ± 0.011 | 0.386 ± 0.005 | 0.560 ± 0.002 |
+| Claude Haiku 5.5, full curves | | 0.388 ± 0.003 | |
+| GPT-4o mini, v2 | 0.416 ± 0.031 | 0.399 ± 0.007 | 0.564 ± 0.006 |
+| Qwen3.5 9B (local), v2 | 0.354 ± 0.006 | | |
+| Haiku 5.5 for 9 evals, then TPE | 0.355 ± 0.023 | 0.395 ± 0.013 | 0.560 ± 0.004 |
+
+| LLM cost per 30-eval run | CNN | XGBoost | MLP |
+|---|:---:|:---:|:---:|
+| Claude Haiku 4.5 (0.6.1) | $0.055 | $0.615 | $0.054 |
+| Claude Haiku 4.5, v2 | $0.057 | $0.067 | $0.056 |
+| Claude Haiku 5.5, v2 | $0.008 | $0.009 | $0.008 |
+| Claude Haiku 5.5, full curves | | $0.070 | |
+| GPT-4o mini, v2 | $0.006 | $0.008 | $0.006 |
+| Qwen3.5 9B (local) | none (about 20 s per call on the RTX 4090) | | |
+| Haiku 5.5 then TPE | $0.002 | $0.002 | $0.002 |
+| Jev | $0.005 | $0.007 | $0.005 |
+
+**Reliability.** No v2 arm produced a single random fallback or invalid config in 140 runs
+(4,200 evals; structured outputs were accepted by Claude Haiku 4.5, Claude Haiku 5.5, GPT-4o mini and Ollama). In
+Phase 1, 18% of Claude Haiku 4.5's MLP evals and 4% of its CNN evals were random.
+
+**Prompt caching.** Only Claude Haiku 5.5 caches (Haiku 4.5's minimum is 4,096 tokens, more than the
+static prompt): about 12,000 to 15,000 of its 30,000 to 48,000 input tokens per run were cache reads.
+
+**Decisions, by the rules fixed before the runs.**
+
+| Question (rule) | Result | Decision |
+|---|---|---|
+| v2 code vs 0.6.1, Claude Haiku 4.5 (keep if not worse anywhere) | helps on the CNN from scratch (4 / 1); no difference in 2 settings; **worse** on the MLP in both seedings (1 / 4 each, +0.002 and +0.009) and on XGBoost with the default first (1 / 4, +0.004) | Changes kept, 20-point curve cap reverted to off by default, as pre-registered |
+| Claude Haiku 5.5 vs 4.5, both v2 (switch if not worse anywhere) | no difference in 4 settings, helps in 2 (XGBoost and MLP, default first); never worse | **Claude Haiku 5.5 is the new Claude default**, about 1/7 of the cost |
+| OpenAI default | only GPT-4o mini tested | stays; it is still the weakest model: worse than TPE on the MLP (both seedings) and on the CNN with the default first |
+| Haiku 5.5 then TPE vs Haiku 5.5 (helps on 2 of 3, not worse on the third) | from scratch: worse on XGBoost (1 / 4), helps on the MLP; default first: helps on the CNN only | Not added to the package |
+
+Against Optuna TPE with the same seeding, the new default (Claude Haiku 5.5; full curves on XGBoost):
+
+| | CNN | XGBoost | Tabular MLP |
+|---|---|---|---|
+| From scratch | helps (4 / 1) | helps (4 / 1) | worse (0 / 5) |
+| Default first | no difference (3 / 2) | helps (5 / 0) | worse (1 / 4) |
+
+**Negative results and open questions.**
+
+- The bar for a general claim (helps on 2 of 3 tasks and not worse on the third) is still not met:
+  the new default helps on the CNN and XGBoost but is worse than TPE on the MLP, by 0.003 in log loss.
+- Fixing the parse failures did not make Claude Haiku 4.5 better on the MLP; it made it slightly
+  worse. The curve cap can't be the cause there (MLP curves are 10 points). One guess is that the
+  random fallbacks were useful exploration on a task where random search is about as good as anything,
+  but the Phase 1 best config came from a random fallback on only 1 of 5 seeds, so this is unexplained.
+- The curve cap was reverted because of the rule above, but the follow-up on XGBoost (the only task
+  it affects) says it was not the cause: capped against full curves, Haiku 5.5 shows no difference
+  from scratch (3 / 2) and is better with the default first (4 / 1), at 1/8 of the cost. This was
+  measured after the decision, so the default stays off; `max_curve_points=20` is recommended for
+  long curves, and turning it on by default needs its own pre-registered check.
+- The local Qwen3.5 9B beats TPE on the CNN from scratch (4 / 1) and shows no difference with the
+  default first, at no API cost, but each call takes about 20 s.
+
+API spend for Phase 2: about $2.90 Anthropic, $0.20 OpenAI.
 
 **Caveats.**
 

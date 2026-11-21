@@ -72,7 +72,7 @@ Auto-detected in order:
 | Backend | How | Notes |
 |---------|-----|-------|
 | OpenAI-compatible server | `NEUROPT_LLM_BASE_URL` + `NEUROPT_MODEL`, or `--base-url` / `--model` | Ollama, vLLM, llama.cpp, LM Studio, OpenRouter |
-| Claude | `ANTHROPIC_API_KEY` | Claude Haiku 4.5 by default; 2.7 to 4.0 s per call in the [harness](evals.md) |
+| Claude | `ANTHROPIC_API_KEY` | Claude Haiku 5.5 by default; about 4 s per call in the [harness](evals.md) |
 | OpenAI | `OPENAI_API_KEY` | GPT-4o mini by default |
 | Random search | `--backend none`, or nothing configured | Baseline; the run header says so |
 
