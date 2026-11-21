@@ -24,7 +24,7 @@ _PRICING = {
 }
 
 
-DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+DEFAULT_MODEL = "claude-haiku-5-5"
 
 
 class ClaudeBackend(BaseLLMBackend):
@@ -38,7 +38,8 @@ class ClaudeBackend(BaseLLMBackend):
 
     Args:
         model: Model id. Defaults to ``$NEUROPT_MODEL`` if it names a Claude
-            model, else Claude Haiku 4.5.
+            model, else Claude Haiku 5.5 (chosen on the benchmark harness: never
+            worse than Haiku 4.5 by the pre-registered rule, about 7x cheaper).
     """
 
     def __init__(self, model: str | None = None):

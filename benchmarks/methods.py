@@ -30,7 +30,13 @@ LLM_MODELS = {
     "neuropt-v2-gpt-4o-mini": ("openai", "gpt-4o-mini"),
     # Local model behind an OpenAI-compatible server at $NEUROPT_LLM_BASE_URL (Ollama)
     "neuropt-v2-qwen3.5-9b": ("compatible", "qwen3.5:9b"),
+    # The package default after Phase 2: Haiku 5.5 with every curve point
+    "neuropt-v2-haiku-5.5-full": ("claude", "claude-haiku-5-5"),
 }
+# The Phase 2 v2 arms ran with at most 20 points per curve (then the package default); pinned so
+# they stay reproducible. Only XGBoost's 500-round curves are long enough for this to matter.
+CURVE_POINTS = {m: 20 for m in ("neuropt-v2-haiku-4.5", "neuropt-v2-haiku-5.5",
+                                "neuropt-v2-gpt-4o-mini", "neuropt-v2-qwen3.5-9b")}
 FROZEN = {"neuropt-haiku-4.5", "neuropt-gpt-4o-mini"}
 # hybrid-<model>: that model's ArchSearch for the first evals, then Optuna TPE warm-started with them
 HYBRID = {"hybrid-v2-haiku-5.5": "neuropt-v2-haiku-5.5"}
@@ -259,7 +265,8 @@ def _arch_search(task, log, seed, seeded, method, workdir, backend):
     search = ArchSearch(train_fn=_train_fn(log), search_space=task.space, backend=backend,
                         log_path=os.path.join(workdir, "search.jsonl"), batch_size=3, seed=seed,
                         timeout=log.timeout * 10,  # the harness enforces the real time limit
-                        initial_configs=[dict(task.default)] if seeded else None)
+                        initial_configs=[dict(task.default)] if seeded else None,
+                        max_curve_points=CURVE_POINTS.get(method))
     return search, backend
 
 

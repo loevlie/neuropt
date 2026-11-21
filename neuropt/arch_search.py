@@ -61,10 +61,6 @@ class ArchSearch:
     # Labels used in console output; DecisionSearch overrides them.
     _title = "LLM-Guided Search"
     _decider_label = "LLM"
-    # Show at most this many epochs per curve in the state (None = all), evenly
-    # spaced and always including the first and last. Long curves (500 boosting
-    # rounds) otherwise dominate the prompt's size and cost.
-    _max_curve_points = 20
 
     @classmethod
     def from_model(cls, model, train_fn, backend="auto", pretrained=None, start_from_model=True,
@@ -210,6 +206,7 @@ class ArchSearch:
         minimize: bool = True,
         seed: int | None = None,
         initial_configs: list | None = None,
+        max_curve_points: int | None = None,
     ):
         """
         Args:
@@ -243,6 +240,12 @@ class ArchSearch:
                 space (snapped / clamped); keys may be left out to keep
                 whatever ``train_fn`` does by default. Configs already in the
                 log (on resume) are not run again.
+            max_curve_points: Show at most this many points per curve in the
+                prompt, evenly spaced and always including the first and last
+                (default: all). Long curves (500 boosting rounds) dominate the
+                prompt's size and cost; 20 cut a Claude Haiku 4.5 XGBoost run from
+                $0.61 to $0.07 in the benchmark harness, but whether it changes
+                search quality isn't settled (docs/evals.md), so it is off.
         """
         self.train_fn = train_fn
         self.search_space = _normalize_search_space(search_space)
@@ -253,6 +256,7 @@ class ArchSearch:
         self.ml_context = ml_context or DEFAULT_ML_CONTEXT
         self.minimize = minimize
         self.seed = 42 if seed is None else seed
+        self._max_curve_points = max_curve_points
 
         self._set_initial(initial_configs or [])
         self._backend = self._resolve_backend_for(backend)

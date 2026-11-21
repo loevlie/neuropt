@@ -30,6 +30,7 @@ STYLE = {
     "neuropt-v2-gpt-4o-mini": ("neuropt v2, GPT-4o mini", "#0e7a52", "s"),
     "neuropt-v2-qwen3.5-9b": ("neuropt v2, Qwen3.5 9B (local)", "#c2367f", "P"),
     "hybrid-v2-haiku-5.5": ("Haiku 5.5 then TPE", "#4d4d4d", "*"),
+    "neuropt-v2-haiku-5.5-full": ("neuropt v2, Claude Haiku 5.5, full curves", "#c08a00", "d"),
 }
 # (variant, baseline) pairs judged by the decision rule in docs/evals.md
 COMPARISONS = [
